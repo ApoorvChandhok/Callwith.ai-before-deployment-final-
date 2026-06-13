@@ -1,8 +1,21 @@
 import os
 import json
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# Re-use the dynamic provider helpers from config_outbound (single source of truth)
+from config_outbound import (
+    fetch_sarvam_voices,
+    fetch_groq_models,
+    get_valid_sarvam_voice,
+    get_valid_groq_model,
+)
+
+
 
 # =========================================================================================
 #  Dashboard Config Bridge — loads overrides from data/agent_config.json

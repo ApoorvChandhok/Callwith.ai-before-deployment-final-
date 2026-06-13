@@ -5,8 +5,10 @@ import {
   Bot, Save, RotateCcw, Plus, Trash2, Link2, FileText, Upload,
   Mic, Volume2, Brain, Wrench, Phone, ChevronDown, ChevronUp,
   CheckCircle, AlertCircle, Loader2, Sparkles, Globe, Settings2,
-  MessageSquare, Zap, X
+  MessageSquare, Zap, X, RefreshCw
 } from "lucide-react";
+import type { ProviderCatalog, VoiceOption, ModelOption } from "@/lib/providers";
+import { FALLBACK_CATALOG, STT_LANGUAGES } from "@/lib/providers";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Resource {
@@ -33,6 +35,7 @@ interface AgentConfig {
   tts_provider: string;
   tts_voice: string;
   tts_language: string;
+  tts_model: string;
   llm_provider: string;
   llm_model: string;
   llm_temperature: number;
@@ -40,62 +43,6 @@ interface AgentConfig {
   resources: Resource[];
   custom_functions: CustomFunction[];
 }
-
-// ─── Voice/Model Options ────────────────────────────────────────────────────────
-const TTS_PROVIDERS = [
-  { value: "sarvam", label: "Sarvam AI (Indian Voices)" },
-  { value: "cartesia", label: "Cartesia (Sonic 2)" },
-  { value: "deepgram", label: "Deepgram" },
-  { value: "openai", label: "OpenAI TTS" },
-];
-
-const TTS_VOICES: Record<string, { value: string; label: string }[]> = {
-  sarvam: [
-    { value: "anushka", label: "Anushka (Female)" },
-    { value: "aravind", label: "Aravind (Male)" },
-    { value: "amartya", label: "Amartya (Male)" },
-    { value: "dhruv", label: "Dhruv (Male)" },
-    { value: "ishita", label: "Ishita (Female)" },
-  ],
-  cartesia: [
-    { value: "f786b574-daa5-4673-aa0c-cbe3e8534c02", label: "Default Voice" },
-  ],
-  deepgram: [
-    { value: "aura-asteria-en", label: "Asteria (English)" },
-  ],
-  openai: [
-    { value: "alloy", label: "Alloy" },
-    { value: "echo", label: "Echo" },
-    { value: "shimmer", label: "Shimmer" },
-    { value: "nova", label: "Nova" },
-    { value: "fable", label: "Fable" },
-    { value: "onyx", label: "Onyx" },
-  ],
-};
-
-const TTS_LANGUAGES = [
-  { value: "en-IN", label: "English (India)" },
-  { value: "hi-IN", label: "Hindi (India)" },
-  { value: "en-US", label: "English (US)" },
-  { value: "en-GB", label: "English (UK)" },
-  { value: "ta-IN", label: "Tamil (India)" },
-  { value: "te-IN", label: "Telugu (India)" },
-  { value: "bn-IN", label: "Bengali (India)" },
-  { value: "kn-IN", label: "Kannada (India)" },
-  { value: "ml-IN", label: "Malayalam (India)" },
-  { value: "mr-IN", label: "Marathi (India)" },
-  { value: "gu-IN", label: "Gujarati (India)" },
-];
-
-const LLM_PROVIDERS = [
-  { value: "groq", label: "Groq (Fast Inference)" },
-  { value: "openai", label: "OpenAI" },
-];
-
-const STT_MODELS = [
-  { value: "nova-2", label: "Nova 2 (Balanced)" },
-  { value: "nova-3", label: "Nova 3 (Newest)" },
-];
 
 // ─── Section Wrapper ────────────────────────────────────────────────────────────
 function Section({ icon: Icon, title, subtitle, children, defaultOpen = true, accentColor = "blue" }: {
@@ -181,21 +128,39 @@ function TextArea({ id, value, onChange, placeholder, rows = 3 }: {
   );
 }
 
-function Select({ id, value, onChange, options }: {
-  id: string; value: string; onChange: (v: string) => void;
+interface SelectProps {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
   options: { value: string; label: string }[];
-}) {
+  loading?: boolean;
+  liveSource?: boolean;
+}
+
+function Select({ id, value, onChange, options, loading, liveSource }: SelectProps) {
   return (
-    <select
-      id={id}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full px-4 py-2.5 rounded-xl border border-gray-200/50 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-sm text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all cursor-pointer"
-    >
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
+    <div className="relative">
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={loading}
+        className="w-full px-4 py-2.5 rounded-xl border border-gray-200/50 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-sm text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all cursor-pointer disabled:opacity-60 appearance-none pr-8"
+      >
+        {loading ? (
+          <option>Loading...</option>
+        ) : (
+          options.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))
+        )}
+      </select>
+      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+        {loading && <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />}
+        {liveSource && !loading && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" title="Live data from provider API" />}
+        <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+      </div>
+    </div>
   );
 }
 
@@ -208,11 +173,33 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
   const [uploading, setUploading] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
+  // Dynamic provider catalog
+  const [catalog, setCatalog] = useState<ProviderCatalog>(FALLBACK_CATALOG);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [liveStatus, setLiveStatus] = useState<Record<string, boolean>>({});
+
   // Resource add form state
   const [newResourceType, setNewResourceType] = useState<"url" | "text">("url");
   const [newResourceName, setNewResourceName] = useState("");
   const [newResourceValue, setNewResourceValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load provider catalog dynamically
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    try {
+      const res = await fetch("/api/providers");
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setCatalog(data.catalog);
+      setLiveStatus(data.live_fetched ?? {});
+    } catch {
+      // Keep fallback catalog
+      console.warn("[AgentConfigForm] Provider catalog fetch failed, using fallback");
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
 
   // Load config
   useEffect(() => {
@@ -229,6 +216,10 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
       })
       .finally(() => setLoading(false));
   }, [mode]);
+
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
 
   // Helpers
   const showToast = (type: "success" | "error", message: string) => {
@@ -252,6 +243,8 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
         body: JSON.stringify({ mode, config }),
       });
       if (!res.ok) throw new Error((await res.json()).error);
+      // Clear provider cache so fresh data is fetched after key changes
+      await fetch("/api/providers", { method: "DELETE" }).catch(() => {});
       showToast("success", "Configuration saved! Changes will apply on the next call.");
       setIsDirty(false);
     } catch (e: any) {
@@ -265,15 +258,11 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
   const handleReset = async () => {
     setLoading(true);
     try {
-      // Delete the stored config for this mode, re-fetch defaults
-      const stored = await fetch(`/api/agent-config?mode=${mode}`).then(r => r.json());
-      // Fetch fresh defaults by temporarily removing stored config
-      const res = await fetch("/api/agent-config", {
+      await fetch("/api/agent-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode, config: null }),
       });
-      // Re-fetch
       const fresh = await fetch(`/api/agent-config?mode=${mode}`).then(r => r.json());
       setConfig(fresh.config);
       setIsDirty(false);
@@ -330,6 +319,30 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
     update("custom_functions", fns);
   };
 
+  // ─── Derived catalog data ───────────────────────────────────────────────────
+  const ttsProviderOptions = Object.entries(catalog.tts).map(([key, val]) => ({
+    value: key,
+    label: val.label,
+  }));
+  const llmProviderOptions = Object.entries(catalog.llm).map(([key, val]) => ({
+    value: key,
+    label: val.label,
+  }));
+  const sttProviderOptions = Object.entries(catalog.stt).map(([key, val]) => ({
+    value: key,
+    label: val.label,
+  }));
+
+  const currentTtsProvider = config?.tts_provider ?? "sarvam";
+  const currentLlmProvider = config?.llm_provider ?? "groq";
+  const currentSttProvider = config?.stt_provider ?? "deepgram";
+
+  const ttsVoices: VoiceOption[] = catalog.tts[currentTtsProvider]?.voices ?? [];
+  const ttsModels: ModelOption[] = catalog.tts[currentTtsProvider]?.models ?? [];
+  const ttsLanguages: ModelOption[] = catalog.tts[currentTtsProvider]?.languages ?? STT_LANGUAGES;
+  const llmModels: ModelOption[] = catalog.llm[currentLlmProvider]?.models ?? [];
+  const sttModels: ModelOption[] = catalog.stt[currentSttProvider]?.models ?? [];
+
   if (loading || !config) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -363,11 +376,25 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
             <span className={`inline-block w-2.5 h-2.5 rounded-full bg-gradient-to-br ${modeColorClass}`} />
             {modeLabel} Agent Configuration
           </h2>
-          <p className="text-gray-500 dark:text-[#8b949e] text-sm mt-1">
+          <p className="text-gray-500 dark:text-[#8b949e] text-sm mt-1 flex items-center gap-2">
             Configure your AI voice agent without touching code. Changes apply on the next call.
+            {!catalogLoading && (
+              <span className="flex items-center gap-1 text-xs text-green-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                Live provider data
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={loadCatalog}
+            disabled={catalogLoading}
+            title="Refresh provider catalog"
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl border border-gray-200/50 dark:border-white/10 text-gray-600 dark:text-[#8b949e] hover:bg-gray-100/50 dark:hover:bg-white/[0.03] transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${catalogLoading ? "animate-spin" : ""}`} />
+          </button>
           <button
             onClick={handleReset}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl border border-gray-200/50 dark:border-white/10 text-gray-600 dark:text-[#8b949e] hover:bg-gray-100/50 dark:hover:bg-white/[0.03] transition-colors"
@@ -430,12 +457,12 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="initial_greeting">Initial Greeting Instruction</Label>
+            <Label htmlFor="initial_greeting">Initial Greeting</Label>
             <TextArea
               id="initial_greeting"
               value={config.initial_greeting}
               onChange={(v) => update("initial_greeting", v)}
-              placeholder="What the agent should say when the call starts..."
+              placeholder="What the agent says when the call starts..."
               rows={3}
             />
           </div>
@@ -454,7 +481,6 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
 
       {/* Section 3: Resources / Knowledge Base */}
       <Section icon={Sparkles} title="Resources & Knowledge Base" subtitle="Add URLs, files, or text content as reference material for the AI" accentColor="cyan">
-        {/* Existing resources */}
         {config.resources.length > 0 && (
           <div className="space-y-2">
             {config.resources.map((res, idx) => (
@@ -467,9 +493,7 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
                   res.type === "file" ? "bg-green-50 dark:bg-[#2ea043]/10 text-green-500 dark:text-[#2ea043]" :
                   "bg-purple-50 dark:bg-[#a371f7]/10 text-purple-500 dark:text-[#a371f7]"
                 }`}>
-                  {res.type === "url" ? <Globe className="w-3.5 h-3.5" /> :
-                   res.type === "file" ? <FileText className="w-3.5 h-3.5" /> :
-                   <FileText className="w-3.5 h-3.5" />}
+                  {res.type === "url" ? <Globe className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800 dark:text-[#e6edf3] truncate">{res.name}</p>
@@ -490,8 +514,6 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
             ))}
           </div>
         )}
-
-        {/* Add resource */}
         <div className="border border-dashed border-gray-200/80 dark:border-white/10 rounded-xl p-5 space-y-4 bg-white/20 dark:bg-black/10 backdrop-blur-sm">
           <div className="flex items-center gap-2">
             <button
@@ -515,13 +537,7 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
               <FileText className="w-3 h-3" />Text
             </button>
             <div className="border-l border-gray-200/50 dark:border-white/10 h-5 mx-1" />
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept=".txt,.md,.csv,.json"
-              className="hidden"
-            />
+            <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".txt,.md,.csv,.json" className="hidden" />
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
@@ -531,31 +547,17 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
               Upload File
             </button>
           </div>
-          <div>
-            <TextInput
-              id="resource_name"
-              value={newResourceName}
-              onChange={setNewResourceName}
-              placeholder={newResourceType === "url" ? "Resource name (e.g. Product Website)" : "Resource name (e.g. Product FAQ)"}
-            />
-          </div>
+          <TextInput
+            id="resource_name"
+            value={newResourceName}
+            onChange={setNewResourceName}
+            placeholder={newResourceType === "url" ? "Resource name (e.g. Product Website)" : "Resource name (e.g. Product FAQ)"}
+          />
           <div>
             {newResourceType === "url" ? (
-              <TextInput
-                id="resource_value"
-                value={newResourceValue}
-                onChange={setNewResourceValue}
-                placeholder="https://example.com/product-info"
-                type="url"
-              />
+              <TextInput id="resource_value" value={newResourceValue} onChange={setNewResourceValue} placeholder="https://example.com/product-info" type="url" />
             ) : (
-              <TextArea
-                id="resource_value"
-                value={newResourceValue}
-                onChange={setNewResourceValue}
-                placeholder="Paste your knowledge base content here..."
-                rows={4}
-              />
+              <TextArea id="resource_value" value={newResourceValue} onChange={setNewResourceValue} placeholder="Paste your knowledge base content here..." rows={4} />
             )}
           </div>
           <button
@@ -567,7 +569,6 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
             Add Resource
           </button>
         </div>
-
         {config.resources.length === 0 && (
           <p className="text-xs text-gray-400 dark:text-[#484f58] text-center py-2">
             No resources added yet. Add URLs, text content, or upload files to expand the AI&apos;s knowledge.
@@ -575,8 +576,20 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
         )}
       </Section>
 
-      {/* Section 4: Voice & Speech Settings */}
+      {/* Section 4: Voice & Speech Settings — FULLY DYNAMIC */}
       <Section icon={Volume2} title="Voice & Speech Settings" subtitle="Text-to-speech and speech-to-text configuration" accentColor="green">
+        {/* Live indicator */}
+        {!catalogLoading && (
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-[#8b949e] bg-green-50 dark:bg-green-500/5 border border-green-200/50 dark:border-green-500/20 rounded-lg px-3 py-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+            Voice options fetched live from provider APIs
+            <button onClick={loadCatalog} className="ml-auto text-green-600 dark:text-green-400 hover:underline flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
+        )}
+
+        {/* TTS Provider → Model → Voice (3-column) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label htmlFor="tts_provider">TTS Provider</Label>
@@ -585,11 +598,25 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
               value={config.tts_provider}
               onChange={(v) => {
                 update("tts_provider", v);
-                // Auto-select first voice for the new provider
-                const voices = TTS_VOICES[v] || [];
+                // Auto-select first voice & model for the new provider
+                const voices = catalog.tts[v]?.voices ?? [];
+                const models = catalog.tts[v]?.models ?? [];
                 if (voices.length > 0) update("tts_voice", voices[0].value);
+                if (models.length > 0) update("tts_model", models[0].value);
               }}
-              options={TTS_PROVIDERS}
+              options={ttsProviderOptions}
+              loading={catalogLoading}
+            />
+          </div>
+          <div>
+            <Label htmlFor="tts_model">TTS Model</Label>
+            <Select
+              id="tts_model"
+              value={config.tts_model ?? ttsModels[0]?.value ?? ""}
+              onChange={(v) => update("tts_model", v)}
+              options={ttsModels}
+              loading={catalogLoading}
+              liveSource={liveStatus.sarvam_voices && currentTtsProvider === "sarvam"}
             />
           </div>
           <div>
@@ -598,45 +625,75 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
               id="tts_voice"
               value={config.tts_voice}
               onChange={(v) => update("tts_voice", v)}
-              options={TTS_VOICES[config.tts_provider] || [{ value: config.tts_voice, label: config.tts_voice }]}
-            />
-          </div>
-          <div>
-            <Label htmlFor="tts_language">Language</Label>
-            <Select
-              id="tts_language"
-              value={config.tts_language}
-              onChange={(v) => update("tts_language", v)}
-              options={TTS_LANGUAGES}
+              options={ttsVoices.map(v => ({
+                value: v.value,
+                label: v.gender ? `${v.label} (${v.gender === "female" ? "♀" : v.gender === "male" ? "♂" : "◈"})` : v.label
+              }))}
+              loading={catalogLoading}
+              liveSource={!!liveStatus.sarvam_voices || !!liveStatus.cartesia_voices}
             />
           </div>
         </div>
-        <div className="border-t border-gray-100 dark:border-[#30363d]/50 pt-4">
-          <p className="text-xs font-semibold text-gray-700 dark:text-[#8b949e] uppercase tracking-wider mb-3">Speech-to-Text</p>
+
+        {/* Language (only for Sarvam and other multi-language providers) */}
+        {catalog.tts[currentTtsProvider]?.languages && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="tts_language">Language</Label>
+              <Select
+                id="tts_language"
+                value={config.tts_language}
+                onChange={(v) => update("tts_language", v)}
+                options={ttsLanguages}
+                loading={catalogLoading}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* STT */}
+        <div className="border-t border-gray-100 dark:border-[#30363d]/50 pt-4">
+          <p className="text-xs font-semibold text-gray-700 dark:text-[#8b949e] uppercase tracking-wider mb-3">Speech-to-Text (STT)</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label htmlFor="stt_provider">STT Provider</Label>
+              <Select
+                id="stt_provider"
+                value={config.stt_provider ?? "deepgram"}
+                onChange={(v) => {
+                  update("stt_provider", v);
+                  const models = catalog.stt[v]?.models ?? [];
+                  if (models.length > 0) update("stt_model", models[0].value);
+                }}
+                options={sttProviderOptions}
+                loading={catalogLoading}
+              />
+            </div>
             <div>
               <Label htmlFor="stt_model">STT Model</Label>
               <Select
                 id="stt_model"
                 value={config.stt_model}
                 onChange={(v) => update("stt_model", v)}
-                options={STT_MODELS}
+                options={sttModels}
+                loading={catalogLoading}
+                liveSource={!!liveStatus.deepgram_models}
               />
             </div>
             <div>
               <Label htmlFor="stt_language">STT Language</Label>
-              <TextInput
+              <Select
                 id="stt_language"
                 value={config.stt_language}
                 onChange={(v) => update("stt_language", v)}
-                placeholder="en"
+                options={STT_LANGUAGES}
               />
             </div>
           </div>
         </div>
       </Section>
 
-      {/* Section 5: LLM Settings */}
+      {/* Section 5: LLM Settings — FULLY DYNAMIC */}
       <Section icon={Brain} title="LLM Settings" subtitle="Large language model provider and parameters" accentColor="orange">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -644,17 +701,24 @@ export default function AgentConfigForm({ mode }: { mode: "inbound" | "outbound"
             <Select
               id="llm_provider"
               value={config.llm_provider}
-              onChange={(v) => update("llm_provider", v)}
-              options={LLM_PROVIDERS}
+              onChange={(v) => {
+                update("llm_provider", v);
+                const models = catalog.llm[v]?.models ?? [];
+                if (models.length > 0) update("llm_model", models[0].value);
+              }}
+              options={llmProviderOptions}
+              loading={catalogLoading}
             />
           </div>
           <div>
             <Label htmlFor="llm_model">Model</Label>
-            <TextInput
+            <Select
               id="llm_model"
               value={config.llm_model}
               onChange={(v) => update("llm_model", v)}
-              placeholder="llama-3.3-70b-versatile"
+              options={llmModels}
+              loading={catalogLoading}
+              liveSource={!!liveStatus.groq_models || !!liveStatus.openai_models}
             />
           </div>
         </div>

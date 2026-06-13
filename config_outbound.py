@@ -1,8 +1,115 @@
 import os
 import json
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# =========================================================================================
+#  Dynamic Provider Helpers — fetch live voice/model lists from provider APIs
+#  Cached in-memory; agent restarts automatically refresh.
+# =========================================================================================
+
+_sarvam_voices_cache: list[str] | None = None
+_groq_models_cache: list[str] | None = None
+
+
+def fetch_sarvam_voices() -> list[str]:
+    """Fetch available Sarvam voices from the Sarvam API. Returns a list of voice names."""
+    global _sarvam_voices_cache
+    if _sarvam_voices_cache is not None:
+        return _sarvam_voices_cache
+
+    fallback = ["anushka", "aravind", "amartya", "dhruv", "ishita", "meera",
+                "pavithra", "maitreyi", "arvind", "arjun", "abhilash"]
+    try:
+        import urllib.request
+        api_key = os.getenv("SARVAM_API_KEY", "")
+        if not api_key:
+            return fallback
+        req = urllib.request.Request(
+            "https://api.sarvam.ai/text-to-speech/voices",
+            headers={"API-Subscription-Key": api_key},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            voices = data if isinstance(data, list) else data.get("voices", [])
+            if voices:
+                result = [
+                    v.get("name") or v.get("speaker_id") or v.get("id") or str(v)
+                    for v in voices
+                ]
+                _sarvam_voices_cache = [r for r in result if r]
+                logger.info(f"[CONFIG] Sarvam voices fetched live: {_sarvam_voices_cache}")
+                return _sarvam_voices_cache
+    except Exception as e:
+        logger.warning(f"[CONFIG] Sarvam voice fetch failed, using fallback: {e}")
+    _sarvam_voices_cache = fallback
+    return fallback
+
+
+def fetch_groq_models() -> list[str]:
+    """Fetch available Groq chat models from the Groq API."""
+    global _groq_models_cache
+    if _groq_models_cache is not None:
+        return _groq_models_cache
+
+    fallback = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama3-70b-8192",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it",
+        "deepseek-r1-distill-llama-70b",
+    ]
+    try:
+        import urllib.request
+        api_key = os.getenv("GROQ_API_KEY", "")
+        if not api_key:
+            return fallback
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            models = [
+                m["id"] for m in data.get("data", [])
+                if "whisper" not in m["id"] and "vision" not in m["id"]
+            ]
+            if models:
+                _groq_models_cache = models
+                logger.info(f"[CONFIG] Groq models fetched live: {len(models)} models")
+                return _groq_models_cache
+    except Exception as e:
+        logger.warning(f"[CONFIG] Groq model fetch failed, using fallback: {e}")
+    _groq_models_cache = fallback
+    return fallback
+
+
+def get_valid_sarvam_voice(requested_voice: str) -> str:
+    """Return requested_voice if valid, else first available voice."""
+    voices = fetch_sarvam_voices()
+    if requested_voice in voices:
+        return requested_voice
+    logger.warning(f"[CONFIG] Voice '{requested_voice}' not in Sarvam list, using '{voices[0]}'")
+    return voices[0] if voices else "aravind"
+
+
+def get_valid_groq_model(requested_model: str) -> str:
+    """Return requested_model if valid, else best available model."""
+    models = fetch_groq_models()
+    if requested_model in models:
+        return requested_model
+    preferred = "llama-3.3-70b-versatile"
+    if preferred in models:
+        return preferred
+    return models[0] if models else requested_model
+
+
 
 # =========================================================================================
 #  Dashboard Config Bridge — loads overrides from data/agent_config.json

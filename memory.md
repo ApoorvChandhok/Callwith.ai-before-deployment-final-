@@ -85,6 +85,12 @@
 
 ## 🪵 Immutable Change Log
 
+### [2026-06-13] - Fix Sarvam TTS Model Version Compatibility Crash
+* **Context:** The outbound agent crashed during call setup when `aravind` was selected as the speaker because the root `.env` hardcoded `SARVAM_TTS_MODEL=bulbul:v2`, which is incompatible with `aravind`.
+* **Scope:**
+  - Updated the root `.env` file to set `SARVAM_TTS_MODEL=bulbul:v3`.
+* **Impact:** Resolved speaker compatibility crashes for Sarvam TTS, allowing calls to go through using the selected voice.
+
 ### [2026-06-13] - Fix Outbound Agent TTS Pre-Warming TypeError
 * **Context:** The outbound voice agent crashed when starting a new session due to a `TypeError` in `asyncio.create_task` because `session.say(...)` returns a `SpeechHandle` (an awaitable) instead of a coroutine object.
 * **Scope:**
@@ -145,3 +151,24 @@
   - Updated `.gitignore` to exclude `logs/` directory
 * **Impact:** No breaking changes. All existing functionality preserved. New tooling is additive.
 * **Verification:** Manual testing of `tester_agent.py` and `log_runner.py` on both backend and frontend.
+
+### [2026-06-13] - Fix Outbound SIP Trunk ID Mismatch
+* **Context:** Outbound and inbound calls were failing with `TwirpError: object cannot be found`. Root cause was a stale `VOBIZ_SIP_TRUNK_ID` in `.env` pointing to a trunk that no longer exists in LiveKit.
+* **Scope:**
+  - Updated `VOBIZ_SIP_TRUNK_ID` in `.env` from `ST_FN8TAbxQaYnn` → `ST_GpnrjlpsVC2K` (matching the active LiveKit outbound trunk)
+  - `INBOUND_TRUNK_ID=ST_6EDBHqmcr7rs` was already correct (matches LiveKit inbound trunk)
+* **Root Cause:** The outbound SIP trunk had been recreated in LiveKit (new ID assigned) but the `.env` was never updated to reflect the new trunk ID.
+* **Impact:** Outbound calls should now connect successfully. Requires backend agent restart to pick up the new env value.
+
+### [2026-06-13] - Dynamic Provider Voices & Models (Zero Hardcoding)
+* **Context:** All voice/model dropdowns in the UI were hardcoded. User wanted fully dynamic pulling from provider APIs.
+* **Scope:**
+  - NEW `dashboard/lib/providers.ts` — central TypeScript types, fallback catalog for all providers (Sarvam, OpenAI, Groq, Cartesia, Deepgram)
+  - NEW `dashboard/app/api/providers/route.ts` — live API endpoint that fetches voices/models from each provider in parallel with 10-min in-memory caching. Falls back to static catalog on failure. Supports `DELETE` to bust cache.
+  - UPDATED `dashboard/components/AgentConfigForm.tsx` — all TTS/STT/LLM selects now fetch from `/api/providers`. Green live-indicator dot when data is live. Refresh button to re-fetch. Provider switching auto-selects first valid voice/model.
+  - UPDATED `dashboard/components/CallDispatcher.tsx` — same live catalog. Voice list dynamically updates when TTS provider changes.
+  - UPDATED `config_outbound.py` — `fetch_sarvam_voices()`, `fetch_groq_models()`, `get_valid_sarvam_voice()`, `get_valid_groq_model()` helpers added. In-memory cached. Graceful fallback if API unreachable.
+  - UPDATED `config_inbound.py` — imports helpers from `config_outbound` (single source of truth).
+* **Impact:** No hardcoded voice/model lists anywhere. Live data from provider APIs at startup and on page load.
+
+

@@ -1,52 +1,82 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Phone, Loader2 } from 'lucide-react';
+import { Phone, Loader2, RefreshCw, ChevronDown } from 'lucide-react';
+import type { ProviderCatalog } from '@/lib/providers';
+import { FALLBACK_CATALOG } from '@/lib/providers';
 
 export default function CallDispatcher() {
     const [phoneNumber, setPhoneNumber] = useState('');
     const [prompt, setPrompt] = useState('');
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
-    
-    // Add state for dynamic defaults
-    const [defaultModel, setDefaultModel] = useState('groq');
-    const [defaultVoice, setDefaultVoice] = useState('alloy');
-    
-    // Fetch defaults from config
+
+    // Selected provider/voice/model — default from agent config
+    const [selectedProvider, setSelectedProvider] = useState('groq');
+    const [selectedVoice, setSelectedVoice] = useState('aravind');
+    const [selectedTtsProvider, setSelectedTtsProvider] = useState('sarvam');
+
+    // Dynamic catalog
+    const [catalog, setCatalog] = useState<ProviderCatalog>(FALLBACK_CATALOG);
+    const [catalogLoading, setCatalogLoading] = useState(true);
+    const [liveStatus, setLiveStatus] = useState<Record<string, boolean>>({});
+
+    const loadCatalog = async () => {
+        setCatalogLoading(true);
+        try {
+            const res = await fetch('/api/providers');
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            setCatalog(data.catalog);
+            setLiveStatus(data.live_fetched ?? {});
+        } catch {
+            // Keep fallback
+        } finally {
+            setCatalogLoading(false);
+        }
+    };
+
+    // Fetch defaults from outbound agent config + provider catalog
     useEffect(() => {
-        fetch('/api/agent-config?mode=outbound')
-            .then(res => res.json())
-            .then(data => {
-                if (data?.config) {
-                    if (data.config.llm_provider) setDefaultModel(data.config.llm_provider);
-                    if (data.config.tts_voice) setDefaultVoice(data.config.tts_voice);
-                }
-            })
-            .catch(console.error);
+        Promise.all([
+            fetch('/api/agent-config?mode=outbound').then(r => r.json()).catch(() => null),
+            loadCatalog(),
+        ]).then(([configData]) => {
+            if (configData?.config) {
+                if (configData.config.llm_provider) setSelectedProvider(configData.config.llm_provider);
+                if (configData.config.tts_provider) setSelectedTtsProvider(configData.config.tts_provider);
+                if (configData.config.tts_voice) setSelectedVoice(configData.config.tts_voice);
+            }
+        });
     }, []);
+
+    // When TTS provider changes, auto-select first voice
+    const handleTtsProviderChange = (provider: string) => {
+        setSelectedTtsProvider(provider);
+        const voices = catalog.tts[provider]?.voices ?? [];
+        if (voices.length > 0) setSelectedVoice(voices[0].value);
+    };
 
     const handleDispatch = async (e: React.FormEvent) => {
         e.preventDefault();
         setStatus('loading');
         setMessage('');
-
-        const form = e.target as HTMLFormElement;
-        const modelProvider = (form.elements.namedItem('modelProvider') as HTMLSelectElement).value;
-        const voice = (form.elements.namedItem('voice') as HTMLSelectElement).value;
-
         try {
             const res = await fetch('/api/dispatch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phoneNumber, prompt, modelProvider, voice }),
+                body: JSON.stringify({
+                    phoneNumber,
+                    prompt,
+                    modelProvider: selectedProvider,
+                    voice: selectedVoice,
+                    ttsProvider: selectedTtsProvider,
+                }),
             });
-
             const data = await res.json();
-
             if (res.ok) {
                 setStatus('success');
-                setMessage(`Call dispatched to ${phoneNumber}`);
+                setMessage(`✓ Call dispatched to ${phoneNumber} — Room: ${data.roomName}`);
             } else {
                 setStatus('error');
                 setMessage(data.error || 'Failed to dispatch call');
@@ -57,14 +87,21 @@ export default function CallDispatcher() {
         }
     };
 
-    const inputClass = "w-full px-3 py-2.5 bg-gray-50 dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] rounded-lg focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#2f81f7] focus:border-blue-500 dark:focus:border-[#2f81f7] text-gray-900 dark:text-[#e6edf3] placeholder-gray-400 dark:placeholder-[#8b949e] outline-none transition-all text-sm";
+    const inputClass = "w-full px-3 py-2.5 bg-gray-50 dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] rounded-lg focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 text-gray-900 dark:text-[#e6edf3] placeholder-gray-400 dark:placeholder-[#8b949e] outline-none transition-all text-sm";
+
+    const llmProviders = Object.entries(catalog.llm).map(([k, v]) => ({ value: k, label: v.label }));
+    const ttsProviders = Object.entries(catalog.tts).map(([k, v]) => ({ value: k, label: v.label }));
+    const voices = (catalog.tts[selectedTtsProvider]?.voices ?? []).map(v => ({
+        value: v.value,
+        label: v.gender ? `${v.label} (${v.gender === 'female' ? '♀' : v.gender === 'male' ? '♂' : '◈'})` : v.label,
+    }));
 
     return (
         <div className="w-full">
             <div className="p-8">
                 <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200 dark:border-[#30363d]">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-50 dark:bg-[#2f81f7]/10 text-blue-600 dark:text-[#2f81f7] rounded-lg">
+                        <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg">
                             <Phone className="w-5 h-5" />
                         </div>
                         <div>
@@ -72,9 +109,29 @@ export default function CallDispatcher() {
                             <p className="text-sm text-gray-500 dark:text-[#8b949e]">Deploy an agent to a specific number</p>
                         </div>
                     </div>
+                    <button
+                        onClick={loadCatalog}
+                        disabled={catalogLoading}
+                        title="Refresh voices & models from provider APIs"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 dark:text-[#8b949e] border border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 ${catalogLoading ? 'animate-spin' : ''}`} />
+                        {catalogLoading ? 'Loading...' : 'Refresh'}
+                    </button>
                 </div>
 
+                {/* Live indicator */}
+                {!catalogLoading && (
+                    <div className="mb-5 flex items-center gap-2 text-xs text-gray-500 dark:text-[#8b949e]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+                        Voices & models fetched live from provider APIs
+                        {liveStatus.sarvam_voices && <span className="px-1.5 py-0.5 rounded bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 font-medium">Sarvam ✓</span>}
+                        {liveStatus.groq_models && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium">Groq ✓</span>}
+                    </div>
+                )}
+
                 <form onSubmit={handleDispatch} className="space-y-5">
+                    {/* Phone number */}
                     <div className="space-y-1.5">
                         <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3]">Phone Number</label>
                         <input
@@ -87,59 +144,96 @@ export default function CallDispatcher() {
                         />
                     </div>
 
+                    {/* Context prompt */}
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3]">Context / Prompt</label>
+                        <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3]">Context / Prompt (optional)</label>
                         <textarea
-                            placeholder="e.g. You are calling regarding a coffee order..."
+                            placeholder="e.g. Call is regarding the customer's recent test drive of Hyundai Creta..."
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
-                            className={`${inputClass} h-24 resize-none`}
+                            className={`${inputClass} h-20 resize-none`}
                         />
                     </div>
 
+                    {/* LLM Provider + TTS Provider */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                            <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3]">Model provider</label>
-                            <select
-                                className={inputClass}
-                                name="modelProvider"
-                                value={defaultModel}
-                                onChange={(e) => setDefaultModel(e.target.value)}
-                            >
-                                <option value="openai">OpenAI (GPT-4o)</option>
-                                <option value="groq">Groq (Llama 3)</option>
-                            </select>
+                            <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3] flex items-center gap-1.5">
+                                LLM Provider
+                                {liveStatus.groq_models && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" title="Live data" />}
+                            </label>
+                            <div className="relative">
+                                <select
+                                    className={`${inputClass} appearance-none pr-8`}
+                                    value={selectedProvider}
+                                    onChange={(e) => setSelectedProvider(e.target.value)}
+                                    disabled={catalogLoading}
+                                >
+                                    {catalogLoading
+                                        ? <option>Loading...</option>
+                                        : llmProviders.map(p => <option key={p.value} value={p.value}>{p.label}</option>)
+                                    }
+                                </select>
+                                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                            </div>
                         </div>
                         <div className="space-y-1.5">
-                            <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3]">Voice</label>
-                            <select
-                                className={inputClass}
-                                name="voice"
-                                value={defaultVoice}
-                                onChange={(e) => setDefaultVoice(e.target.value)}
-                            >
-                                <option value="alloy">Alloy (US)</option>
-                                <option value="echo">Echo (US)</option>
-                                <option value="shimmer">Shimmer (US)</option>
-                                <option value="anushka">Anushka (IN)</option>
-                                <option value="aravind">Aravind (IN)</option>
-                                <option value="f786b574-daa5-4673-aa0c-cbe3e8534c02">Default Voice (Cartesia)</option>
-                                <option value="aura-asteria-en">Asteria (Deepgram)</option>
-                            </select>
+                            <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3]">TTS Provider</label>
+                            <div className="relative">
+                                <select
+                                    className={`${inputClass} appearance-none pr-8`}
+                                    value={selectedTtsProvider}
+                                    onChange={(e) => handleTtsProviderChange(e.target.value)}
+                                    disabled={catalogLoading}
+                                >
+                                    {catalogLoading
+                                        ? <option>Loading...</option>
+                                        : ttsProviders.map(p => <option key={p.value} value={p.value}>{p.label}</option>)
+                                    }
+                                </select>
+                                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                            </div>
                         </div>
                     </div>
 
+                    {/* Voice selector — dynamic based on TTS provider */}
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3] flex items-center gap-1.5">
+                            Voice
+                            {(liveStatus.sarvam_voices && selectedTtsProvider === 'sarvam') && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse" title="Live from Sarvam API" />
+                            )}
+                            {catalogLoading && <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />}
+                        </label>
+                        <div className="relative">
+                            <select
+                                className={`${inputClass} appearance-none pr-8`}
+                                value={selectedVoice}
+                                onChange={(e) => setSelectedVoice(e.target.value)}
+                                disabled={catalogLoading}
+                            >
+                                {catalogLoading
+                                    ? <option>Loading voices...</option>
+                                    : voices.map(v => <option key={v.value} value={v.value}>{v.label}</option>)
+                                }
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                        </div>
+                        <p className="text-xs text-gray-400 dark:text-[#8b949e]">
+                            {voices.length} voice{voices.length !== 1 ? 's' : ''} available for {catalog.tts[selectedTtsProvider]?.label ?? selectedTtsProvider}
+                        </p>
+                    </div>
+
+                    {/* Dispatch button */}
                     <button
                         type="submit"
-                        disabled={status === 'loading'}
-                        className="w-full py-2.5 px-4 bg-blue-500 dark:bg-[#2f81f7] hover:bg-blue-600 dark:hover:bg-[#1a6de8] text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        disabled={status === 'loading' || catalogLoading}
+                        className="w-full py-2.5 px-4 bg-indigo-500 dark:bg-indigo-600 hover:bg-indigo-600 dark:hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-sm shadow-indigo-500/20"
                     >
                         {status === 'loading' ? (
-                            <>
-                                <Loader2 className="w-4 h-4 animate-spin" /> Dispatching...
-                            </>
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Dispatching...</>
                         ) : (
-                            'Initiate Call'
+                            <><Phone className="w-4 h-4" /> Initiate Call</>
                         )}
                     </button>
 
