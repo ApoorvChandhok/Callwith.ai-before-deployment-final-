@@ -32,7 +32,7 @@ import {
   Mail, MessageCircle, UserCheck, XCircle, PhoneOutgoing, Globe, StickyNote,
   Bell, Calendar, Timer, Sheet, Play, AlertTriangle, AlertCircle, Code2, Workflow, Smartphone,
   MessageSquare, Send, Instagram, Building2, Cloud, Shuffle, Combine, Repeat,
-  Table2, FileCode2,
+  Table2, FileCode2, Edit2, Copy, BarChart3, FileUp, Pencil, Circle, Octagon, Reply, Layers,
 } from "lucide-react";
 
 // ── Icon Map (same as WorkflowNodeCard) ──────────────────────────────────────
@@ -43,6 +43,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   PhoneOutgoing, Globe, StickyNote, Bell, Sheet, Calendar, Timer, Play,
   AlertTriangle, Code2, Workflow, Smartphone, MessageSquare, Send, Instagram,
   Building2, Cloud, Shuffle, Combine, Repeat, Table2, FileCode2, TagIcon: Tag,
+  Edit2, Copy, BarChart3, FileUp, Pencil, Circle, Octagon, Reply, Layers,
 };
 
 // ── Props (preserved from original) ──────────────────────────────────────────
@@ -57,8 +58,10 @@ interface Props {
   onAddEdge: (sourceId: string, targetId: string, sourcePort?: string) => void;
   onDeleteEdge: (id: string) => void;
   nodeExecutionStatuses?: Record<string, "idle" | "running" | "success" | "error">;
+  nodeExecutionTimes?: Record<string, number>;
   nodeValidations?: Record<string, NodeValidationResult>;
   onAddNode?: (metadata: NodeMetadata, position: { x: number; y: number }) => void;
+  onInsertBetween?: (edge: { sourceId: string; targetId: string; sourcePort?: string }) => void;
 }
 
 // ── Extended data type passed to custom nodes ────────────────────────────────
@@ -68,8 +71,90 @@ interface NodeDataBase {
   isSelected: boolean;
   executionState: "idle" | "running" | "success" | "error";
   validation?: NodeValidationResult;
+  executionMs?: number;
   onSelect: (id: string | null) => void;
   onDelete: (id: string) => void;
+}
+
+// ── Tidy Up Auto-Layout Algorithm ────────────────────────────────────────────
+
+function tidyUpNodes(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[]
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  if (nodes.length === 0) return positions;
+
+  // Build adjacency: children map
+  const children = new Map<string, string[]>();
+  const parents = new Map<string, string[]>();
+  nodes.forEach((n) => {
+    children.set(n.id, []);
+    parents.set(n.id, []);
+  });
+  edges.forEach((e) => {
+    children.get(e.sourceId)?.push(e.targetId);
+    parents.get(e.targetId)?.push(e.sourceId);
+  });
+
+  // Find root nodes (no parents — triggers or disconnected)
+  const roots = nodes.filter((n) => (parents.get(n.id)?.length ?? 0) === 0);
+
+  // BFS to assign layers
+  const layers = new Map<string, number>();
+  const queue: { id: string; layer: number }[] = [];
+  roots.forEach((r) => {
+    queue.push({ id: r.id, layer: 0 });
+    layers.set(r.id, 0);
+  });
+
+  while (queue.length > 0) {
+    const { id, layer } = queue.shift()!;
+    const kids = children.get(id) || [];
+    kids.forEach((kid) => {
+      const existing = layers.get(kid);
+      const newLayer = layer + 1;
+      if (existing === undefined || newLayer > existing) {
+        layers.set(kid, newLayer);
+        queue.push({ id: kid, layer: newLayer });
+      }
+    });
+  }
+
+  // Assign unvisited nodes to layer 0
+  nodes.forEach((n) => {
+    if (!layers.has(n.id)) layers.set(n.id, 0);
+  });
+
+  // Group by layer
+  const layerGroups = new Map<number, WorkflowNode[]>();
+  nodes.forEach((n) => {
+    const layer = layers.get(n.id) ?? 0;
+    if (!layerGroups.has(layer)) layerGroups.set(layer, []);
+    layerGroups.get(layer)!.push(n);
+  });
+
+  // Position: vertical layers, horizontal spread
+  const NODE_WIDTH = 260;
+  const NODE_HEIGHT = 100;
+  const H_GAP = 60;
+  const V_GAP = 120;
+
+  const sortedLayers = Array.from(layerGroups.keys()).sort((a, b) => a - b);
+  sortedLayers.forEach((layerIdx) => {
+    const group = layerGroups.get(layerIdx)!;
+    const totalWidth = group.length * NODE_WIDTH + (group.length - 1) * H_GAP;
+    const startX = -totalWidth / 2;
+
+    group.forEach((node, i) => {
+      positions.set(node.id, {
+        x: startX + i * (NODE_WIDTH + H_GAP) + NODE_WIDTH / 2,
+        y: layerIdx * (NODE_HEIGHT + V_GAP),
+      });
+    });
+  });
+
+  return positions;
 }
 
 // ── Edge color mapping ───────────────────────────────────────────────────────
@@ -86,26 +171,28 @@ function getEdgeColor(sourcePort?: string, label?: string): string {
 
 function WorkflowReactFlowNode({ data, selected }: NodeProps) {
   const nodeData = data as unknown as NodeDataBase;
-  const { workflowNode, executionState, validation, onSelect, onDelete } = nodeData;
+  const { workflowNode, executionState, validation, executionMs, onSelect, onDelete } = nodeData;
   const node = workflowNode;
   const isTrigger = node.category === "trigger";
   const isCondition = node.category === "condition" || node.type === "loop_items";
 
   return (
     <>
-      {/* Input handle (top) — not for triggers */}
+      {/* Input handle (top) — n8n style: 12px, border, hover scale */}
       {!isTrigger && (
         <Handle
           type="target"
           position={Position.Top}
           id="input"
+          className="n8n-handle target"
           style={{
-            width: 10,
-            height: 10,
-            background: "#0d1117",
-            border: "2px solid #30363d",
+            width: 12,
+            height: 12,
+            background: "var(--n8n-bg, #fff)",
+            border: "1px solid var(--n8n-border-dark, #c0c0cc)",
             borderRadius: "50%",
             cursor: "crosshair",
+            transition: "all 0.15s ease",
           }}
         />
       )}
@@ -120,82 +207,30 @@ function WorkflowReactFlowNode({ data, selected }: NodeProps) {
         onDelete={onDelete}
       />
 
-      {/* Output handles (bottom) */}
-      {node.type === "loop_items" ? (
+      {/* Output handles (bottom) — n8n style: 12px, border, colored */}
+      {node.type === "loop_items" || node.type === "split_in_batches" ? (
         <>
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="loop"
-            style={{
-              width: 14,
-              height: 14,
-              background: "#0d1117",
-              border: "2px solid #a855f7",
-              borderRadius: "50%",
-              cursor: "crosshair",
-            }}
-          />
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="done"
-            style={{
-              width: 14,
-              height: 14,
-              background: "#0d1117",
-              border: "2px solid #9ca3af",
-              borderRadius: "50%",
-              cursor: "crosshair",
-              marginLeft: 40,
-            }}
-          />
+          <Handle type="source" position={Position.Bottom} id="loop"
+            style={{ width: 12, height: 12, background: "var(--n8n-bg, #fff)", border: "1px solid #a855f7", borderRadius: "50%", cursor: "crosshair", transition: "all 0.15s ease" }} />
+          <Handle type="source" position={Position.Bottom} id="done"
+            style={{ width: 12, height: 12, background: "var(--n8n-bg, #fff)", border: "1px solid var(--n8n-text-muted, #9b9bb5)", borderRadius: "50%", cursor: "crosshair", marginLeft: 40, transition: "all 0.15s ease" }} />
         </>
       ) : isCondition ? (
         <>
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="yes"
-            style={{
-              width: 14,
-              height: 14,
-              background: "#0d1117",
-              border: "2px solid #3fb950",
-              borderRadius: "50%",
-              cursor: "crosshair",
-              marginLeft: -20,
-            }}
-          />
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="no"
-            style={{
-              width: 14,
-              height: 14,
-              background: "#0d1117",
-              border: "2px solid #f85149",
-              borderRadius: "50%",
-              cursor: "crosshair",
-              marginLeft: 20,
-            }}
-          />
+          <Handle type="source" position={Position.Bottom} id="yes"
+            style={{ width: 12, height: 12, background: "var(--n8n-bg, #fff)", border: "1px solid var(--n8n-success, #2ebd6b)", borderRadius: "50%", cursor: "crosshair", marginLeft: -20, transition: "all 0.15s ease" }} />
+          <Handle type="source" position={Position.Bottom} id="no"
+            style={{ width: 12, height: 12, background: "var(--n8n-bg, #fff)", border: "1px solid var(--n8n-danger, #e54d4d)", borderRadius: "50%", cursor: "crosshair", marginLeft: 20, transition: "all 0.15s ease" }} />
         </>
       ) : (
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          id="output"
-          style={{
-            width: 10,
-            height: 10,
-            background: "#0d1117",
-            border: "2px solid #30363d",
-            borderRadius: "50%",
-            cursor: "crosshair",
-          }}
-        />
+        <>
+          <Handle type="source" position={Position.Bottom} id="output"
+            style={{ width: 12, height: 12, background: "var(--n8n-bg, #fff)", border: "1px solid var(--n8n-border-dark, #c0c0cc)", borderRadius: "50%", cursor: "crosshair", transition: "all 0.15s ease" }} />
+          {(node as any).onError === "continueErrorOutput" && (
+            <Handle type="source" position={Position.Bottom} id="error"
+              style={{ width: 12, height: 12, background: "var(--n8n-bg, #fff)", border: "1px solid var(--n8n-danger, #e54d4d)", borderRadius: "50%", cursor: "crosshair", marginLeft: 30, transition: "all 0.15s ease" }} />
+          )}
+        </>
       )}
     </>
   );
@@ -208,6 +243,7 @@ function NodeCardInner({
   isSelected,
   executionState,
   validation,
+  executionMs,
   onSelect,
   onDelete,
 }: {
@@ -215,6 +251,7 @@ function NodeCardInner({
   isSelected: boolean;
   executionState: "idle" | "running" | "success" | "error";
   validation?: NodeValidationResult;
+  executionMs?: number;
   onSelect: (id: string | null) => void;
   onDelete: (id: string) => void;
 }) {
@@ -264,22 +301,28 @@ function NodeCardInner({
 
   return (
     <div
-      className={`w-[240px] rounded-2xl border transition-all duration-200 bg-white/90 dark:bg-[#161b22]/90 backdrop-blur-md ${borderClass} ${shadowClass} ${pulseClass} ${
-        isSelected ? "ring-1 ring-indigo-500/30" : ""
-      }`}
+      className="w-[240px] transition-all duration-200"
+      style={{
+        background: 'var(--n8n-node-bg, #fff)',
+        border: `1.5px solid ${isSelected ? 'var(--n8n-primary, #ff6d5a)' : 'var(--n8n-node-border, rgba(0,0,0,0.1))'}`,
+        borderRadius: '8px',
+        boxShadow: isSelected ? '0 0 0 6px rgba(255, 109, 90, 0.08), 0 4px 12px rgba(0,0,0,0.12)' : '0 1px 3px -1px rgba(0,0,0,0.1)',
+        cursor: 'pointer',
+      }}
       onClick={(e) => {
         e.stopPropagation();
         onSelect(node.id);
       }}
     >
       {/* Color accent bar */}
-      <div className="h-1 rounded-t-xl" style={{ backgroundColor: color }} />
+      <div style={{ height: '3px', borderRadius: '8px 8px 0 0', backgroundColor: color }} />
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100/80 dark:border-white/5">
+      <div className="flex items-center gap-2 px-3 py-2.5" style={{ borderBottom: '1px solid var(--n8n-border-light, #f0f0f5)' }}>
         <div
-          className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+          className="w-7 h-7 flex items-center justify-center flex-shrink-0"
           style={{
+            borderRadius: '4px',
             backgroundColor: `${color}15`,
             border: `1px solid ${color}30`,
           }}
@@ -287,10 +330,10 @@ function NodeCardInner({
           <Icon className="w-3.5 h-3.5" style={{ color }} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-semibold text-gray-900 dark:text-[#e6edf3] truncate">
+          <div className="text-xs font-semibold truncate" style={{ color: 'var(--n8n-text, #1a1a2e)' }}>
             {node.label}
           </div>
-          <div className="text-[10px] text-gray-400 dark:text-[#6e7681] capitalize">
+          <div className="text-[10px] capitalize" style={{ color: 'var(--n8n-text-muted, #9b9bb5)' }}>
             {node.category}
           </div>
         </div>
@@ -349,21 +392,27 @@ function NodeCardInner({
 
         {/* Execution badge */}
         {executionState !== "idle" && (
-          <div className="flex items-center justify-center mr-1">
+          <div className="flex items-center justify-center mr-1 gap-1">
             {executionState === "running" && (
               <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--n8n-warning, #f5a623)' }}></span>
+                <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--n8n-warning, #f5a623)' }}></span>
               </span>
             )}
             {executionState === "success" && (
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold shadow-sm shadow-green-500/20">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[10px] font-bold" style={{ background: 'var(--n8n-success, #2ebd6b)' }}>
                 &#10003;
               </span>
             )}
             {executionState === "error" && (
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold shadow-sm shadow-red-500/20">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[10px] font-bold" style={{ background: 'var(--n8n-danger, #e54d4d)' }}>
                 !
+              </span>
+            )}
+            {/* Execution time */}
+            {executionMs !== undefined && executionState !== "running" && (
+              <span className="text-[9px] font-mono tabular-nums" style={{ color: 'var(--n8n-text-muted, #9b9bb5)' }}>
+                {executionMs < 1000 ? `${executionMs}ms` : `${(executionMs / 1000).toFixed(1)}s`}
               </span>
             )}
           </div>
@@ -374,7 +423,10 @@ function NodeCardInner({
             e.stopPropagation();
             onDelete(node.id);
           }}
-          className="p-1 rounded-md text-gray-400 dark:text-[#6e7681] hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+          className="p-1 rounded transition-colors"
+          style={{ color: 'var(--n8n-text-muted, #9b9bb5)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--n8n-danger, #e54d4d)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--n8n-text-muted, #9b9bb5)')}
         >
           <svg
             className="w-3.5 h-3.5"
@@ -391,7 +443,7 @@ function NodeCardInner({
 
       {/* Config summary */}
       <div className="px-3 py-2">
-        <p className="text-[11px] text-gray-500 dark:text-[#8b949e] truncate font-mono">
+        <p className="text-[11px] truncate" style={{ color: 'var(--n8n-text-light, #6e6e8a)', fontFamily: 'var(--n8n-font-mono, monospace)' }}>
           {configSummary}
         </p>
       </div>
@@ -476,8 +528,11 @@ function WorkflowCustomEdge({
     sourcePort?: string;
     label?: string;
     onDelete?: (id: string) => void;
+    onInsertBetween?: (edge: { sourceId: string; targetId: string; sourcePort?: string }) => void;
+    sourceId?: string;
+    targetId?: string;
   };
-  const { sourcePort, label, onDelete } = edgeData;
+  const { sourcePort, label, onDelete, onInsertBetween, sourceId, targetId } = edgeData;
 
   const strokeColor = getEdgeColor(sourcePort, label);
 
@@ -490,6 +545,10 @@ function WorkflowCustomEdge({
     targetPosition,
     curvature: 0.4,
   });
+
+  // Midpoint for the insert button
+  const midX = (sourceX + targetX) / 2;
+  const midY = (sourceY + targetY) / 2;
 
   return (
     <>
@@ -524,6 +583,28 @@ function WorkflowCustomEdge({
         fill={strokeColor}
         opacity={0.6}
       />
+      {/* Insert node "+" button at midpoint */}
+      {onInsertBetween && sourceId && targetId && (
+        <foreignObject
+          x={midX - 10}
+          y={midY - 10}
+          width={20}
+          height={20}
+          style={{ overflow: "visible" }}
+        >
+          <button
+            className="w-5 h-5 rounded-full bg-[#161b22] dark:bg-[#0d1117] border border-gray-600 dark:border-[#30363d] text-gray-400 dark:text-[#8b949e] hover:text-white hover:bg-[var(--n8n-primary, #ff6d5a)] hover:border-[var(--n8n-primary, #ff6d5a)] flex items-center justify-center text-[10px] font-bold transition-all opacity-0 hover:opacity-100 group-hover:opacity-100 shadow-md cursor-pointer"
+            style={{ opacity: 1 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onInsertBetween({ sourceId, targetId, sourcePort });
+            }}
+            title="Insert node between"
+          >
+            +
+          </button>
+        </foreignObject>
+      )}
       {/* Label pill */}
       {label && (
         <g>
@@ -560,6 +641,7 @@ function mapWorkflowNodesToReactFlow(
   selectedNodeId: string | null,
   executionStatuses: Record<string, "idle" | "running" | "success" | "error">,
   validations: Record<string, NodeValidationResult>,
+  executionTimes: Record<string, number>,
   onSelect: (id: string | null) => void,
   onDelete: (id: string) => void
 ): Node[] {
@@ -572,6 +654,7 @@ function mapWorkflowNodesToReactFlow(
       isSelected: selectedNodeId === wn.id,
       executionState: executionStatuses[wn.id] || "idle",
       validation: validations[wn.id],
+      executionMs: executionTimes[wn.id],
       onSelect,
       onDelete,
     } satisfies NodeDataBase,
@@ -583,7 +666,8 @@ function mapWorkflowNodesToReactFlow(
 
 function mapWorkflowEdgesToReactFlow(
   edges: WorkflowEdge[],
-  onDelete: (id: string) => void
+  onDelete: (id: string) => void,
+  onInsertBetween?: (edge: { sourceId: string; targetId: string; sourcePort?: string }) => void
 ): Edge[] {
   return edges.map((we) => ({
     id: we.id,
@@ -596,6 +680,9 @@ function mapWorkflowEdgesToReactFlow(
       sourcePort: we.sourcePort,
       label: we.label,
       onDelete,
+      onInsertBetween,
+      sourceId: we.sourceId,
+      targetId: we.targetId,
     },
   }));
 }
@@ -612,8 +699,10 @@ function WorkflowCanvasInner({
   onAddEdge,
   onDeleteEdge,
   nodeExecutionStatuses = {},
+  nodeExecutionTimes = {},
   nodeValidations = {},
   onAddNode,
+  onInsertBetween,
 }: Props) {
   const { screenToFlowPosition, fitView } = useReactFlow();
   const hasFitRef = useRef(false);
@@ -626,15 +715,16 @@ function WorkflowCanvasInner({
         selectedNodeId,
         nodeExecutionStatuses,
         nodeValidations,
+        nodeExecutionTimes,
         onSelectNode,
         onDeleteNode
       ),
-    [nodes, selectedNodeId, nodeExecutionStatuses, nodeValidations, onSelectNode, onDeleteNode]
+    [nodes, selectedNodeId, nodeExecutionStatuses, nodeValidations, nodeExecutionTimes, onSelectNode, onDeleteNode]
   );
 
   const rfEdges = useMemo(
-    () => mapWorkflowEdgesToReactFlow(edges, onDeleteEdge),
-    [edges, onDeleteEdge]
+    () => mapWorkflowEdgesToReactFlow(edges, onDeleteEdge, onInsertBetween),
+    [edges, onDeleteEdge, onInsertBetween]
   );
 
   // ── Node changes (dragging, selection) ────────────────────
@@ -746,6 +836,21 @@ function WorkflowCanvasInner({
     }, 100);
     return () => clearTimeout(timer);
   }, [nodes, fitView]);
+
+  // ── Tidy Up Nodes (listens for custom event from toolbar) ──
+  useEffect(() => {
+    const handleTidyUp = () => {
+      const positions = tidyUpNodes(nodes, edges);
+      positions.forEach((pos, nodeId) => {
+        onMoveNode(nodeId, pos);
+      });
+      // Fit view after tidy up
+      setTimeout(() => fitView({ padding: 0.15, maxZoom: 1 }), 50);
+    };
+
+    window.addEventListener("workflow:tidyup", handleTidyUp);
+    return () => window.removeEventListener("workflow:tidyup", handleTidyUp);
+  }, [nodes, edges, onMoveNode, fitView]);
 
   // ── React Flow node/edge type registry ─────────────────────
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowReactFlowNode }), []);

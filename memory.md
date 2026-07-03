@@ -3,7 +3,14 @@
 ---
 ## Changelog
 
+### 2026-07-03 - Fix loop_items iterating CSV rows
+* **Root cause:** `ctx.$json` was rebuilt from merged `$nodes` outputs on every node visit in `workflow-executor.ts`. This overwrote `ctx.$json.item` that `loop_items` had just set, so expressions like `{{$json.item.phone}}` always resolved to `undefined` inside loop body nodes.
+* **Fix 1 (restore item):** After rebuilding `ctx.$json`, re-inject the active loop item from `ctx.$loopState` so child nodes always see `$json.item` pointing to the current CSV row.
+* **Fix 2 (operator precedence):** Fixed JS operator precedence bug in the string-based JSON array parse check.
+* **Fix 3 (extra fallback):** Added `ctx.$json.rows` as additional fallback array source in the loop initializer.
+
 ### 2026-07-02 - BulkDialer 5 UX Enhancements
+
 * **Greeting dynamic tags:** Initial Greeting field now supports `{{lead.X}}` placeholders with a live resolved preview (green text below the field).
 * **Focus-aware tag insertion:** Clicking a Dynamic Entity chip inserts the tag into whichever field (greeting or prompt) was last focused. Chip label updates to show "insert into greeting ↑" vs "insert into prompt ↓".
 * **Run Again:** After campaign completes, a green "Run Again" button re-dials the same lead list with the same config without full reset. "New Campaign" button still does full reset.

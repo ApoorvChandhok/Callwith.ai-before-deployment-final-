@@ -4,20 +4,13 @@ import path from "path";
 
 const DATA_DIR = path.join(process.cwd(), "..", "data");
 
-// ── GET /api/campaign/download?campaignId=<id> ─────────────────────────────────
-// Merges the original leads data with the call results (Status + Remarks)
-// and returns a downloadable CSV file with Content-Disposition header.
-// The frontend stores the original parsed leads in state and passes them
-// as a query param (or we read from a temp store).
-// To keep it stateless: the frontend POSTs the original rows + campaignId.
-
+// ── POST /api/real-estate/download-results ────────────────────────────────────
+// Extended version of /api/campaign/download with enriched columns for
+// real estate campaigns: Email Status, Call Summary, Sentiment,
+// Interested Projects, Brochure Sent.
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { campaignId, leads, columns } = body;
-    // leads: Array<Record<string, string>> — original rows from uploaded file
-    // columns: string[] — original column names (in order)
-    // campaignId: string
+    const { campaignId, leads, columns } = await req.json();
 
     if (!campaignId || !leads || !columns) {
       return NextResponse.json(
@@ -44,17 +37,17 @@ export async function POST(req: NextRequest) {
       resultMap.set(r.row_index, r);
     }
 
-    // Merge original columns + new Status + Remarks columns
-    // Check if this is an enriched campaign (real estate) with extra fields
-    const hasEnriched = results.some(
-      (r: any) => r.email_status || r.interested_projects || r.brochure_sent
-    );
+    // Enriched columns (beyond the standard Call Status / Remarks / Sentiment)
+    const enrichedColumns = [
+      "Call Status",
+      "Email Status",
+      "Call Summary",
+      "Sentiment",
+      "Interested Projects",
+      "Brochure Sent",
+    ];
 
-    const baseExtraColumns = ["Call Status", "Call Remarks", "Call Sentiment"];
-    const enrichedColumns = hasEnriched
-      ? ["Email Status", "Interested Projects", "Brochure Sent"]
-      : [];
-    const allColumns = [...columns, ...baseExtraColumns, ...enrichedColumns];
+    const allColumns = [...columns, ...enrichedColumns];
 
     // Escape a CSV cell value
     const escapeCell = (val: string) => {
@@ -74,20 +67,22 @@ export async function POST(req: NextRequest) {
     leads.forEach((lead: Record<string, string>, index: number) => {
       const result = resultMap.get(index);
       const rowCells = columns.map((col: string) => escapeCell(lead[col] ?? ""));
+
+      // Standard columns
       rowCells.push(escapeCell(result?.status ?? "Pending"));
+      // Enriched columns
+      rowCells.push(escapeCell(result?.email_status ?? "Not Sent"));
       rowCells.push(escapeCell(result?.remarks ?? ""));
       rowCells.push(escapeCell(result?.sentiment ?? ""));
-      if (hasEnriched) {
-        rowCells.push(escapeCell(result?.email_status ?? "not_requested"));
-        rowCells.push(
-          escapeCell(
-            Array.isArray(result?.interested_projects)
-              ? result.interested_projects.join("; ")
-              : result?.interested_projects ?? ""
-          )
-        );
-        rowCells.push(escapeCell(result?.brochure_sent ?? ""));
-      }
+      rowCells.push(
+        escapeCell(
+          Array.isArray(result?.interested_projects)
+            ? result.interested_projects.join("; ")
+            : result?.interested_projects ?? ""
+        )
+      );
+      rowCells.push(escapeCell(result?.brochure_sent ?? ""));
+
       rows.push(rowCells.join(","));
     });
 
@@ -97,11 +92,11 @@ export async function POST(req: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="campaign_${campaignId}_results.csv"`,
+        "Content-Disposition": `attachment; filename="real_estate_${campaignId}_results.csv"`,
       },
     });
   } catch (err: any) {
-    console.error("[Campaign Download]", err);
+    console.error("[Real Estate Download Results]", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

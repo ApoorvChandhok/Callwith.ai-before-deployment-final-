@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
+
+const DATA_DIR = path.join(process.cwd(), "..", "data");
 
 // ---------------------------------------------------------------------------
 // Tool Gateway — /api/tools/execute
@@ -414,6 +418,157 @@ async function handleCheckAvailability(
   }
 }
 
+// ── Handle: send_brochure (Real Estate Campaign) ─────────────────────────────
+async function handleSendBrochure(
+  params: Record<string, unknown>,
+  workspaceId: string
+): Promise<string> {
+  const projectName = String(params.project_name || "");
+  const leadEmail   = String(params.lead_email || "");
+  const leadName    = String(params.lead_name || "Customer");
+  const campaignId  = String(params.campaign_id || "");
+
+  if (!projectName || !leadEmail) {
+    return "I apologize, I need both the project name and your email address to send the brochure.";
+  }
+
+  // Load campaign data from file
+  if (!campaignId) {
+    console.warn("[tool-gateway] send_brochure: no campaign_id provided");
+    return "Our team will follow up with the brochure shortly. Thank you for your interest!";
+  }
+
+  const brochureFile = path.join(DATA_DIR, `brochures_${campaignId}.json`);
+  if (!fs.existsSync(brochureFile)) {
+    console.warn(`[tool-gateway] Brochure file not found: ${brochureFile}`);
+    return "Our team will follow up with the brochure shortly. Thank you for your interest!";
+  }
+
+  const campaignData = JSON.parse(fs.readFileSync(brochureFile, "utf-8"));
+
+  // Support both old format (flat array) and new format ({ brochures, emailConfig })
+  const brochuresList = Array.isArray(campaignData) ? campaignData : campaignData.brochures || [];
+  const emailConfig = campaignData.emailConfig || {};
+
+  const brochure = brochuresList.find(
+    (b: any) => b.name.toLowerCase() === projectName.toLowerCase()
+  );
+
+  if (!brochure) {
+    console.warn(`[tool-gateway] Brochure not found for project: ${projectName}`);
+    return `I couldn't find the brochure for ${projectName} right now. Our team will send it to you shortly.`;
+  }
+
+  // Get Gmail tokens from Supabase
+  const tokens = await getIntegrationTokens(workspaceId, "gmail");
+
+  if (!tokens) {
+    console.warn("[tool-gateway] No Gmail tokens for workspace:", workspaceId);
+    return "Our team will email you the brochure shortly. Thank you for your interest!";
+  }
+
+  let accessToken = tokens.access_token;
+  if (tokens.refresh_token) {
+    const fresh = await refreshGoogleAccessToken(tokens.refresh_token);
+    if (fresh) accessToken = fresh;
+  }
+
+  // Get sender email
+  const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const userInfo = userRes.ok ? await userRes.json() : {};
+  const fromEmail = userInfo.email || "me";
+
+  // Build email subject using template
+  const subject = (emailConfig.subject || "{{project.name}} — Project Brochure")
+    .replace(/\{\{lead\.name\}\}/g, leadName)
+    .replace(/\{\{lead\.email\}\}/g, leadEmail)
+    .replace(/\{\{project\.name\}\}/g, brochure.name)
+    .replace(/\{\{project\.description\}\}/g, brochure.description || "")
+    .replace(/\{\{sender\.name\}\}/g, emailConfig.senderName || "Sales Team");
+
+  // Build email body using template
+  const senderName = emailConfig.senderName || "Sales Team";
+  const rawBody = emailConfig.body || "";
+  let htmlBody: string;
+
+  if (rawBody.trim()) {
+    // Use custom template with dynamic variables
+    const resolvedBody = rawBody
+      .replace(/\{\{lead\.name\}\}/g, leadName)
+      .replace(/\{\{lead\.email\}\}/g, leadEmail)
+      .replace(/\{\{lead\.phone\}\}/g, String(params.lead_phone || ""))
+      .replace(/\{\{project\.name\}\}/g, brochure.name)
+      .replace(/\{\{project\.description\}\}/g, brochure.description || "")
+      .replace(/\{\{project\.content\}\}/g, brochure.content || "")
+      .replace(/\{\{sender\.name\}\}/g, senderName);
+
+    // Wrap in HTML email template
+    htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+        <div style="white-space: pre-wrap; line-height: 1.6;">${resolvedBody.replace(/\n/g, "<br>")}</div>
+        <hr style="border: 1px solid #eee; margin: 20px 0;">
+        <p style="color: #888; font-size: 12px;">Sent by ${senderName}</p>
+      </div>
+    `;
+  } else {
+    // Default template
+    htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #1a1a2e;">${brochure.name} — Project Brochure</h2>
+        <p style="color: #555;">Dear ${leadName},</p>
+        <p style="color: #555;">Thank you for your interest in <strong>${brochure.name}</strong>! Here are the details:</p>
+        ${brochure.description ? `<p style="color: #555;"><strong>${brochure.description}</strong></p>` : ""}
+        <hr style="border: 1px solid #eee;">
+        <div style="white-space: pre-wrap; line-height: 1.6; color: #333;">${brochure.content}</div>
+        <hr style="border: 1px solid #eee;">
+        <p style="color: #888; font-size: 12px;">Sent by ${senderName}. For more details, please contact our sales team.</p>
+      </div>
+    `;
+  }
+
+  // Build raw MIME email and base64url encode
+  const base64Email = Buffer.from(
+    [
+      `To: ${leadEmail}`,
+      `From: ${fromEmail}`,
+      `Subject: ${subject}`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      htmlBody,
+    ].join("\r\n")
+  )
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  const sendRes = await fetch(
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ raw: base64Email }),
+    }
+  );
+
+  if (!sendRes.ok) {
+    const errText = await sendRes.text();
+    console.error("[tool-gateway] ❌ Gmail send failed:", sendRes.status, errText);
+    return `I had a small issue sending the email. Our team will follow up with the ${projectName} brochure shortly.`;
+  }
+
+  const result = await sendRes.json();
+  console.log(`[tool-gateway] ✅ Brochure email sent to ${leadEmail} — messageId: ${result.id}`);
+
+  return `Bilkul! Main aapko ${projectName} ki brochure email kar rahi hoon — aapko abhi ek email milega. Agar koi aur project dekhna chahein toh batayiyega!`;
+}
+
 // ---------------------------------------------------------------------------
 // Main POST handler
 // ---------------------------------------------------------------------------
@@ -455,6 +610,10 @@ export async function POST(req: NextRequest) {
       case "note_taking":
       case "save_memory":
         result = await handleNoteTaking(parameters, workspaceId);
+        break;
+
+      case "send_brochure":
+        result = await handleSendBrochure(parameters, workspaceId);
         break;
 
       // ─── Add new real-time integrations below ───────────────────────────

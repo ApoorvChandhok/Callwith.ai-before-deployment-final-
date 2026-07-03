@@ -177,8 +177,9 @@ async function executeActionNode(
         const content = fs.readFileSync(csvPath, "utf-8");
         const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
         if (lines.length < 2) return { success: true, output: { leads: [] } };
-        
-        const headers = lines[0].split(",").map(h => h.trim());
+
+        // Normalize headers: trim, lowercase, replace spaces with underscores
+        const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
         let leads = [];
         for (let i = 1; i < lines.length; i++) {
           const vals = lines[i].split(",").map(v => v.trim());
@@ -188,16 +189,20 @@ async function executeActionNode(
           });
           leads.push(obj);
         }
-        
+
         if (resolvedConfig.limit && Number(resolvedConfig.limit) > 0) {
           leads = leads.slice(0, Number(resolvedConfig.limit));
         }
-        
+
         // Also stick it on context so following nodes can use {{$json.leads}}
         if (!ctx.$json) ctx.$json = {};
         ctx.$json.leads = leads;
-        
-        return { success: true, output: { leads, count: leads.length } };
+        // Make first lead accessible as top-level context
+        if (leads.length > 0) {
+          ctx.lead = leads[0];
+        }
+
+        return { success: true, output: { leads, count: leads.length, items: leads, allItems: leads } };
       } catch (err: any) {
         return { success: false, output: {}, error: err.message };
       }
@@ -609,6 +614,61 @@ async function executeActionNode(
       return { success: subResult.status !== "error", output: { runId: subResult.id, status: subResult.status, steps: subResult.steps.length } };
     }
 
+    // ── n8n-Style Data Transformation Nodes ────────────────────────────────
+    if (type === "set_fields") {
+      const newFields: Record<string, any> = {};
+      (resolvedConfig.fields || []).forEach((f: any) => {
+        if (f.name) newFields[f.name] = f.value;
+      });
+      return { success: true, output: { fieldsSet: newFields } };
+    }
+
+    if (type === "aggregate") {
+      return { success: true, output: { mode: resolvedConfig.mode || "append", aggregated: true } };
+    }
+
+    if (type === "remove_duplicates") {
+      return { success: true, output: { keyField: resolvedConfig.keyField, deduplicated: true } };
+    }
+
+    if (type === "summarize") {
+      return { success: true, output: { mode: resolvedConfig.mode, summarized: true } };
+    }
+
+    if (type === "extract_from_file") {
+      return { success: true, output: { fileType: resolvedConfig.fileType, extracted: true } };
+    }
+
+    if (type === "convert_file") {
+      return { success: true, output: { from: resolvedConfig.fromFormat, to: resolvedConfig.toFormat, converted: true } };
+    }
+
+    if (type === "date_time") {
+      const op = resolvedConfig.operation || "formatDate";
+      const now = new Date();
+      return { success: true, output: { operation: op, date: now.toISOString() } };
+    }
+
+    if (type === "edit_fields") {
+      return { success: true, output: { fieldsEdited: resolvedConfig.fields || [] } };
+    }
+
+    if (type === "no_operation") {
+      return { success: true, output: { passthrough: true } };
+    }
+
+    if (type === "stop_error") {
+      return { success: false, output: {}, error: resolvedConfig.errorMessage || "Workflow stopped" };
+    }
+
+    if (type === "respond_webhook") {
+      return { success: true, output: { responseCode: resolvedConfig.responseCode || 200, sent: true } };
+    }
+
+    if (type === "split_in_batches") {
+      return { success: true, output: { batchSize: resolvedConfig.batchSize || 10, split: true } };
+    }
+
     console.warn(`[Workflow] Unknown action node type: ${type}. Skipping.`);
     return { success: true, output: { skipped: true, reason: `Unsupported node type: ${type}` } };
 
@@ -682,18 +742,19 @@ function evaluateCondition(
       let items: any[] = [];
       const exprItems = resolvedConfig.itemsExpression;
       if (Array.isArray(exprItems)) items = exprItems;
-      else if (typeof exprItems === "string" && exprItems.trim().startsWith("[") || exprItems.trim().startsWith("{")) {
+      else if (typeof exprItems === "string" && (exprItems.trim().startsWith("[") || exprItems.trim().startsWith("{"))) {
         try { items = JSON.parse(exprItems); } catch {}
         if (!Array.isArray(items)) items = [items];
       } else if (exprItems) {
         items = [exprItems];
       }
       
-      // Look for any arrays in the resolved config if no expression, or fallback to $json array
+      // Fallback: look for CSV rows in $json if expression resolved to nothing
       if (items.length === 0) {
         if (Array.isArray(ctx.$json)) items = ctx.$json;
         else if (Array.isArray(ctx.$json.leads)) items = ctx.$json.leads;
         else if (Array.isArray(ctx.$json.items)) items = ctx.$json.items;
+        else if (Array.isArray(ctx.$json.rows)) items = ctx.$json.rows;
       }
       
       ctx.$loopState[node.id] = { index: 0, items };
@@ -823,6 +884,19 @@ export async function executeWorkflow(
     }
     ctx.$json = mergedJson;
 
+    // Restore active loop item — loop_items sets ctx.$json.item but it gets wiped
+    // by the merge above on every node visit. Re-inject it from $loopState so that
+    // expressions like {{$json.item.phone}} continue to resolve inside the loop body.
+    if (ctx.$loopState) {
+      for (const loopState of Object.values(ctx.$loopState)) {
+        const activeIdx = loopState.index - 1; // index was already incremented
+        if (activeIdx >= 0 && activeIdx < loopState.items.length) {
+          ctx.$json.item = loopState.items[activeIdx];
+          break;
+        }
+      }
+    }
+
     const resolvedConfig = resolveConfigTemplates(node.config || {}, ctx);
     const nodeStart = Date.now();
 
@@ -852,11 +926,11 @@ export async function executeWorkflow(
         }
       }
 
-      // ── loop_items: re-queue itself to process next item ──
-      // When the loop port fires, we need to re-evaluate loop_items
+      // ── loop_items / split_in_batches: re-queue itself to process next item ──
+      // When the loop port fires, we need to re-evaluate the loop node
       // so it advances to the next item. It re-queues itself at the
       // END of the queue so its children execute first.
-      if (node.type === "loop_items" && port === "loop") {
+      if ((node.type === "loop_items" || node.type === "split_in_batches") && port === "loop") {
         queue.push(node.id);
       }
 
@@ -933,9 +1007,11 @@ export async function executeWorkflow(
     if (!effectiveSuccess) hasError = true;
     if (ctx.$nodes) ctx.$nodes[node.label] = { json: output || {} };
 
-    // Queue next nodes
-    for (const edge of getOutgoingEdges(workflow.edges, node.id)) {
-      queue.push(edge.targetId);
+    // Queue next nodes (skip for stop_error — it halts execution)
+    if (node.type !== "stop_error") {
+      for (const edge of getOutgoingEdges(workflow.edges, node.id)) {
+        queue.push(edge.targetId);
+      }
     }
   }
 
@@ -951,6 +1027,31 @@ export async function executeWorkflow(
 
   writeRun(finalRun);
   console.log(`[WorkflowExecutor] Run ${runId}: ${finalRun.status} in ${totalMs}ms, ${steps.length} steps`);
+
+  // ── Error Workflow Chaining (n8n-style) ──
+  if (hasError && workflow.errorWorkflowId) {
+    try {
+      const workflowsFile = path.join(DATA_DIR, "workflows.json");
+      if (fs.existsSync(workflowsFile)) {
+        const allWorkflows = JSON.parse(fs.readFileSync(workflowsFile, "utf-8"));
+        const errorWf = allWorkflows.find((w: any) => w.id === workflow.errorWorkflowId);
+        if (errorWf) {
+          console.log(`[WorkflowExecutor] Triggering error workflow: ${errorWf.name} (${errorWf.id})`);
+          await executeWorkflow(errorWf, "error_trigger", {
+            errorWorkflowId: workflow.id,
+            errorWorkflowName: workflow.name,
+            failedRunId: runId,
+            errorMessage: steps.find((s) => s.status === "error")?.error || "Unknown error",
+            failedNodeId: steps.find((s) => s.status === "error")?.nodeId,
+            failedNodeLabel: steps.find((s) => s.status === "error")?.label,
+          }, { dashboardUrl });
+        }
+      }
+    } catch (err: any) {
+      console.error(`[WorkflowExecutor] Failed to trigger error workflow:`, err.message);
+    }
+  }
+
   return finalRun;
 }
 

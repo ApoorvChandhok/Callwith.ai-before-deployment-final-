@@ -7,7 +7,7 @@ import {
   Mail, MessageCircle, UserCheck, XCircle, PhoneOutgoing, Globe, StickyNote,
   Bell, Calendar, Timer, Play, AlertTriangle, Code2, Shuffle, Repeat,
   Smartphone, MessageSquare, Send, Building2, Cloud, Table2, FileCode2,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Edit2, Copy, BarChart3, FileUp, Pencil, Circle, Octagon, Reply, Layers,
 } from "lucide-react";
 import { buildPaletteSections, type NodeMetadata } from "@/lib/workflow-types";
 
@@ -43,6 +43,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Code2, Shuffle, Combine: CombineIcon, Repeat,
   Smartphone, MessageSquare, Send, Building2, Cloud, Table2, FileCode2,
   Workflow: WorkflowIcon, Instagram: InstagramIcon,
+  Edit2, Copy, BarChart3, FileUp, Pencil, Circle, Octagon, Reply, Layers,
 };
 
 interface Props {

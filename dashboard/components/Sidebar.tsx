@@ -25,6 +25,7 @@ import {
   LogOut,
   ChevronDown,
   ShieldCheck,
+  Building,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAppContext } from "./app-provider";
@@ -218,6 +219,7 @@ export default function Sidebar() {
   const allRoutes = [
     { name: "Overview",        path: "/",            icon: LayoutDashboard, minRoleRequired: "read_only"  as UserRole },
     { name: "Outbound Dialer", path: "/dialer",       icon: PhoneOutgoing,   minRoleRequired: "manager"   as UserRole },
+    { name: "Real Estate",     path: "/real-estate",  icon: Building,        minRoleRequired: "manager"   as UserRole },
     { name: "Call Logs",       path: "/logs",         icon: Activity,        minRoleRequired: "read_only"  as UserRole },
     { name: "Leads / CRM",     path: "/leads",        icon: Users,           minRoleRequired: "read_only"  as UserRole },
     { name: "Workflows",       path: "/workflows",    icon: GitBranch,       minRoleRequired: "manager"   as UserRole },

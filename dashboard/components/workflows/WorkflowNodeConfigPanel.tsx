@@ -352,7 +352,7 @@ function InputField({
 
   return (
     <div className="space-y-1.5 relative">
-      <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9]">{label}</label>
+      <label className="text-xs font-medium" style={{ color: '#c9d1d9' }}>{label}</label>
       <input
         ref={inputRef}
         type={type} value={value || ""} onChange={(e) => onChange(e.target.value)}
@@ -367,13 +367,16 @@ function InputField({
             onChange(newVal);
           }
         }}
-        className={`w-full px-3 py-2 text-sm rounded-lg border transition-all
-          ${isDragOver ? "border-green-500 ring-2 ring-green-500/30 bg-green-500/5 dark:bg-green-500/10" : "border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]"}
-          text-gray-900 dark:text-[#e6edf3] placeholder-gray-400 dark:placeholder-[#484f58]
-          focus:outline-none focus:ring-2 focus:ring-[#2f81f7]/40 focus:border-[#2f81f7]
-          ${monospace ? "font-mono text-xs" : ""}`}
+        className={`w-full px-3 py-2 text-sm rounded-lg border transition-all ${monospace ? "font-mono text-xs" : ""}`}
+        style={{
+          borderColor: isDragOver ? '#2ebd6b' : '#2a2a40',
+          background: isDragOver ? 'rgba(46, 189, 107, 0.05)' : '#0d0d1a',
+          color: '#e0e0e6',
+          outline: 'none',
+          boxShadow: isDragOver ? '0 0 0 2px rgba(46, 189, 107, 0.3)' : 'none',
+        }}
       />
-      {helperText && <p className="text-[10px] text-gray-400 dark:text-[#6e7681]">{helperText}</p>}
+      {helperText && <p className="text-[10px]" style={{ color: '#6e7681' }}>{helperText}</p>}
     </div>
   );
 }
@@ -390,7 +393,7 @@ function TextAreaField({
 
   return (
     <div className="space-y-1.5 relative">
-      <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9]">{label}</label>
+      <label className="text-xs font-medium" style={{ color: '#c9d1d9' }}>{label}</label>
       <textarea
         ref={inputRef}
         value={value || ""} onChange={(e) => onChange(e.target.value)}
@@ -405,11 +408,14 @@ function TextAreaField({
             onChange(newVal);
           }
         }}
-        className={`w-full px-3 py-2 text-sm rounded-lg border transition-all resize-none
-          ${isDragOver ? "border-green-500 ring-2 ring-green-500/30 bg-green-500/5 dark:bg-green-500/10" : "border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]"}
-          text-gray-900 dark:text-[#e6edf3] placeholder-gray-400 dark:placeholder-[#484f58]
-          focus:outline-none focus:ring-2 focus:ring-[#2f81f7]/40 focus:border-[#2f81f7]
-          ${monospace ? "font-mono text-xs leading-relaxed" : ""}`}
+        className={`w-full px-3 py-2 text-sm rounded-lg border transition-all resize-none ${monospace ? "font-mono text-xs leading-relaxed" : ""}`}
+        style={{
+          borderColor: isDragOver ? '#2ebd6b' : '#2a2a40',
+          background: isDragOver ? 'rgba(46, 189, 107, 0.05)' : '#0d0d1a',
+          color: '#e0e0e6',
+          outline: 'none',
+          boxShadow: isDragOver ? '0 0 0 2px rgba(46, 189, 107, 0.3)' : 'none',
+        }}
       />
     </div>
   );
@@ -423,18 +429,17 @@ function SelectField({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9]">{label}</label>
+      <label className="text-xs font-medium" style={{ color: '#c9d1d9' }}>{label}</label>
       <select
         value={value || ""} onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-[#30363d]
-          bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]
-          focus:outline-none focus:ring-2 focus:ring-[#2f81f7]/40 focus:border-[#2f81f7] transition-all cursor-pointer"
+        className="w-full px-3 py-2 text-sm rounded-lg border transition-all cursor-pointer"
+        style={{ borderColor: '#2a2a40', background: '#0d0d1a', color: '#e0e0e6', outline: 'none' }}
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
-      {helperText && <p className="text-[10px] text-gray-400 dark:text-[#6e7681]">{helperText}</p>}
+      {helperText && <p className="text-[10px]" style={{ color: '#6e7681' }}>{helperText}</p>}
     </div>
   );
 }
@@ -446,13 +451,12 @@ function NumberField({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9]">{label}</label>
+      <label className="text-xs font-medium" style={{ color: '#c9d1d9' }}>{label}</label>
       <input
         type="number" value={value || 0} onChange={(e) => onChange(parseInt(e.target.value) || 0)}
         min={min} max={max}
-        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-[#30363d]
-          bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]
-          focus:outline-none focus:ring-2 focus:ring-[#2f81f7]/40 focus:border-[#2f81f7] transition-all"
+        className="w-full px-3 py-2 text-sm rounded-lg border transition-all"
+        style={{ borderColor: '#2a2a40', background: '#0d0d1a', color: '#e0e0e6', outline: 'none' }}
       />
     </div>
   );
@@ -1455,23 +1459,161 @@ export default function WorkflowNodeConfigPanel({ node, onClose, onUpdate, execu
       case "read_csv_leads":
         return (
           <div className="space-y-3">
-            <CsvUploader 
+            <CsvUploader
               value={node.config.filePath || ""}
               onChange={(v) => update("filePath", v)}
             />
             <div className="text-center text-xs text-gray-400 dark:text-[#8b949e] font-mono my-1">- OR -</div>
-            <InputField 
-              label="Manual CSV Path (Advanced)" 
-              value={node.config.filePath || ""} 
-              onChange={(v) => update("filePath", v)} 
-              placeholder="../data/leads.csv" 
+            <InputField
+              label="Manual CSV Path (Advanced)"
+              value={node.config.filePath || ""}
+              onChange={(v) => update("filePath", v)}
+              placeholder="../data/leads.csv"
             />
-            <NumberField 
-              label="Row Limit (0 for no limit)" 
-              value={node.config.limit || 0} 
-              onChange={(v) => update("limit", v)} 
-              min={0} 
+            <NumberField
+              label="Row Limit (0 for no limit)"
+              value={node.config.limit || 0}
+              onChange={(v) => update("limit", v)}
+              min={0}
             />
+          </div>
+        );
+
+      // ── n8n-Style Data Transformation Nodes ──────────────────────────────────
+      case "set_fields":
+        return (
+          <div className="space-y-3">
+            <SelectField label="Mode" value={node.config.mode || "manual"} onChange={(v) => update("mode", v)} options={[{ value: "manual", label: "Manual" }, { value: "expression", label: "Expression" }]} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider">Fields to Set</label>
+              {(node.config.fields || [{ name: "", value: "" }]).map((field: any, i: number) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input value={field.name} onChange={(e) => { const fields = [...(node.config.fields || [])]; fields[i] = { ...fields[i], name: e.target.value }; update("fields", fields); }} placeholder="Field name" className="flex-1 px-2 py-1.5 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]" />
+                  <input value={field.value} onChange={(e) => { const fields = [...(node.config.fields || [])]; fields[i] = { ...fields[i], value: e.target.value }; update("fields", fields); }} placeholder="Value (use {{expression}})" className="flex-1 px-2 py-1.5 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]" />
+                  <button onClick={() => { const fields = [...(node.config.fields || [])]; fields.splice(i, 1); update("fields", fields); }} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                </div>
+              ))}
+              <button onClick={() => update("fields", [...(node.config.fields || []), { name: "", value: "" }])} className="text-[10px] text-[#2f81f7] hover:underline">+ Add Field</button>
+            </div>
+          </div>
+        );
+
+      case "aggregate":
+        return (
+          <div className="space-y-3">
+            <SelectField label="Mode" value={node.config.mode || "append"} onChange={(v) => update("mode", v)} options={[{ value: "append", label: "Append" }, { value: "group_by", label: "Group By" }, { value: "summarize", label: "Summarize" }]} />
+            <InputField label="Group By Field" value={node.config.groupByField || ""} onChange={(v) => update("groupByField", v)} placeholder="e.g., status" />
+            <InputField label="Aggregate Field" value={node.config.aggregateField || ""} onChange={(v) => update("aggregateField", v)} placeholder="e.g., score" />
+            <SelectField label="Aggregate Function" value={node.config.aggregateFunction || "count"} onChange={(v) => update("aggregateFunction", v)} options={[{ value: "count", label: "Count" }, { value: "sum", label: "Sum" }, { value: "avg", label: "Average" }, { value: "min", label: "Min" }, { value: "max", label: "Max" }, { value: "join", label: "Join" }]} />
+          </div>
+        );
+
+      case "remove_duplicates":
+        return (
+          <div className="space-y-3">
+            <InputField label="Key Field" value={node.config.keyField || ""} onChange={(v) => update("keyField", v)} placeholder="e.g., email" />
+            <SelectField label="Compare Mode" value={node.config.compareMode || "exact"} onChange={(v) => update("compareMode", v)} options={[{ value: "exact", label: "Exact Match" }, { value: "case_insensitive", label: "Case Insensitive" }]} />
+          </div>
+        );
+
+      case "summarize":
+        return (
+          <div className="space-y-3">
+            <InputField label="Prompt" value={node.config.prompt || ""} onChange={(v) => update("prompt", v)} placeholder="Summarize the data..." />
+            <InputField label="Model" value={node.config.model || ""} onChange={(v) => update("model", v)} placeholder="e.g., gpt-4" />
+            <NumberField label="Max Tokens" value={node.config.maxTokens || 500} onChange={(v) => update("maxTokens", v)} min={1} />
+          </div>
+        );
+
+      case "extract_from_file":
+        return (
+          <div className="space-y-3">
+            <SelectField label="File Type" value={node.config.fileType || "json"} onChange={(v) => update("fileType", v)} options={[{ value: "json", label: "JSON" }, { value: "csv", label: "CSV" }, { value: "pdf", label: "PDF" }, { value: "html", label: "HTML" }, { value: "text", label: "Text" }]} />
+            <InputField label="JSON Path" value={node.config.jsonPath || ""} onChange={(v) => update("jsonPath", v)} placeholder="e.g., $.data.items" />
+            <InputField label="CSV Delimiter" value={node.config.csvDelimiter || ","} onChange={(v) => update("csvDelimiter", v)} placeholder="," />
+          </div>
+        );
+
+      case "convert_file":
+        return (
+          <div className="space-y-3">
+            <SelectField label="From Format" value={node.config.fromFormat || "json"} onChange={(v) => update("fromFormat", v)} options={[{ value: "json", label: "JSON" }, { value: "csv", label: "CSV" }, { value: "xml", label: "XML" }, { value: "html", label: "HTML" }, { value: "text", label: "Text" }]} />
+            <SelectField label="To Format" value={node.config.toFormat || "csv"} onChange={(v) => update("toFormat", v)} options={[{ value: "json", label: "JSON" }, { value: "csv", label: "CSV" }, { value: "xml", label: "XML" }, { value: "html", label: "HTML" }, { value: "text", label: "Text" }]} />
+          </div>
+        );
+
+      case "date_time":
+        return (
+          <div className="space-y-3">
+            <SelectField label="Operation" value={node.config.operation || "formatDate"} onChange={(v) => update("operation", v)} options={[{ value: "formatDate", label: "Format Date" }, { value: "addToDate", label: "Add to Date" }, { value: "subtractFromDate", label: "Subtract from Date" }, { value: "getCurrentDate", label: "Get Current Date" }, { value: "extractDate", label: "Extract Date Part" }, { value: "roundDate", label: "Round Date" }, { value: "getTimeBetweenDates", label: "Time Between Dates" }]} />
+            <InputField label="Input Field" value={node.config.inputField || ""} onChange={(v) => update("inputField", v)} placeholder="e.g., $json.createdAt" />
+            <InputField label="Format" value={node.config.format || "yyyy-MM-dd"} onChange={(v) => update("format", v)} placeholder="yyyy-MM-dd" />
+            <NumberField label="Addition" value={node.config.addition || 1} onChange={(v) => update("addition", v)} min={0} />
+            <SelectField label="Unit" value={node.config.additionUnit || "hours"} onChange={(v) => update("additionUnit", v)} options={[{ value: "seconds", label: "Seconds" }, { value: "minutes", label: "Minutes" }, { value: "hours", label: "Hours" }, { value: "days", label: "Days" }, { value: "weeks", label: "Weeks" }, { value: "months", label: "Months" }]} />
+          </div>
+        );
+
+      case "edit_fields":
+        return (
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider">Field Operations</label>
+            {(node.config.fields || [{ name: "", value: "", action: "set" }]).map((field: any, i: number) => (
+              <div key={i} className="flex gap-2 items-center">
+                <select value={field.action || "set"} onChange={(e) => { const fields = [...(node.config.fields || [])]; fields[i] = { ...fields[i], action: e.target.value }; update("fields", fields); }} className="w-16 px-1 py-1.5 text-[10px] rounded border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]">
+                  <option value="set">Set</option>
+                  <option value="remove">Remove</option>
+                  <option value="rename">Rename</option>
+                </select>
+                <input value={field.name} onChange={(e) => { const fields = [...(node.config.fields || [])]; fields[i] = { ...fields[i], name: e.target.value }; update("fields", fields); }} placeholder="Field name" className="flex-1 px-2 py-1.5 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]" />
+                <input value={field.value} onChange={(e) => { const fields = [...(node.config.fields || [])]; fields[i] = { ...fields[i], value: e.target.value }; update("fields", fields); }} placeholder="Value" className="flex-1 px-2 py-1.5 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]" />
+                <button onClick={() => { const fields = [...(node.config.fields || [])]; fields.splice(i, 1); update("fields", fields); }} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+              </div>
+            ))}
+            <button onClick={() => update("fields", [...(node.config.fields || []), { name: "", value: "", action: "set" }])} className="text-[10px] text-[#2f81f7] hover:underline">+ Add Field</button>
+          </div>
+        );
+
+      case "no_operation":
+        return (
+          <div className="p-3 rounded-lg bg-gray-50 dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d]">
+            <p className="text-xs text-gray-500 dark:text-[#8b949e]">This node does nothing — it passes all input data through unchanged. Useful for testing or as a placeholder.</p>
+          </div>
+        );
+
+      case "stop_error":
+        return (
+          <div className="space-y-3">
+            <SelectField label="Error Type" value={node.config.errorType || "errorMessage"} onChange={(v) => update("errorType", v)} options={[{ value: "errorMessage", label: "Error Message" }, { value: "errorObject", label: "Error Object" }]} />
+            {node.config.errorType === "errorObject" ? (
+              <TextAreaField label="Error Object (JSON)" value={node.config.errorObject || ""} onChange={(v) => update("errorObject", v)} placeholder='{"code": "STOPPED", "reason": "Manual stop"}' rows={4} />
+            ) : (
+              <InputField label="Error Message" value={node.config.errorMessage || ""} onChange={(v) => update("errorMessage", v)} placeholder="Workflow stopped by Stop and Error node" />
+            )}
+          </div>
+        );
+
+      case "respond_webhook":
+        return (
+          <div className="space-y-3">
+            <NumberField label="Response Code" value={node.config.responseCode || 200} onChange={(v) => update("responseCode", v)} min={100} max={599} />
+            <InputField label="Response Body" value={node.config.responseBody || ""} onChange={(v) => update("responseBody", v)} placeholder='{"status": "ok"}' />
+            <InputField label="Content Type" value={node.config.responseContentType || "application/json"} onChange={(v) => update("responseContentType", v)} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider">Response Headers</label>
+              {(node.config.responseHeaders ? Object.entries(node.config.responseHeaders) : []).map(([key, val], i: number) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input value={key} onChange={(e) => { const headers = { ...(node.config.responseHeaders || {}) }; delete headers[key]; headers[e.target.value] = val; update("responseHeaders", headers); }} placeholder="Header name" className="flex-1 px-2 py-1.5 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]" />
+                  <input value={val as string} onChange={(e) => { const headers = { ...(node.config.responseHeaders || {}) }; headers[key] = e.target.value; update("responseHeaders", headers); }} placeholder="Value" className="flex-1 px-2 py-1.5 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3]" />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+
+      case "split_in_batches":
+        return (
+          <div className="space-y-3">
+            <NumberField label="Batch Size" value={node.config.batchSize || 10} onChange={(v) => update("batchSize", v)} min={1} />
           </div>
         );
 
@@ -1567,6 +1709,20 @@ export default function WorkflowNodeConfigPanel({ node, onClose, onUpdate, execu
   // ── Settings Tab ────────────────────────────────────────────────────────────
   const renderSettingsTab = () => (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Notes */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9] flex items-center gap-1.5">
+          📝 Notes
+        </label>
+        <textarea
+          value={(node as any).notes || ""}
+          onChange={(e) => onUpdate(node.id, node.config, undefined, { notes: e.target.value })}
+          placeholder="Add notes about this node..."
+          rows={3}
+          className="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]/50 resize-none"
+        />
+      </div>
+
       <div className="space-y-2">
         <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9] flex items-center gap-1.5">
           Node Options
@@ -1591,42 +1747,57 @@ export default function WorkflowNodeConfigPanel({ node, onClose, onUpdate, execu
         </div>
       </div>
 
-      {/* Error Handling (n8n-pattern) */}
+      {/* On Error (n8n-style) */}
       {node.category === "action" && (
         <div className="space-y-2">
           <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9] flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 text-orange-400" /> Error Handling
+            <AlertTriangle className="w-3.5 h-3.5 text-orange-400" /> On Error
           </label>
-          <div className="space-y-1.5">
-            <label className="flex items-start gap-2 cursor-pointer p-2.5 rounded-lg border border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors">
-              <input
-                type="checkbox"
-                checked={!!node.continueOnFail}
-                onChange={(e) => onUpdate(node.id, node.config, undefined, { continueOnFail: e.target.checked })}
-                className="w-3.5 h-3.5 accent-[#f59e0b] rounded mt-0.5"
-              />
-              <div>
-                <div className="text-xs font-medium text-gray-800 dark:text-[#e6edf3]">Continue On Fail</div>
-                <div className="text-[10px] text-gray-400 dark:text-[#6e7681]">If this node fails, continue the workflow instead of stopping</div>
-              </div>
-            </label>
-            <label className="flex items-start gap-2 cursor-pointer p-2.5 rounded-lg border border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors">
-              <input
-                type="checkbox"
-                checked={!!node.retryOnFail}
-                onChange={(e) => {
-                  const retryCount = node.retryCount || 3;
-                  const retryIntervalMs = node.retryIntervalMs || 1000;
-                  onUpdate(node.id, node.config, undefined, { retryOnFail: e.target.checked, retryCount, retryIntervalMs });
-                }}
-                className="w-3.5 h-3.5 accent-[#f59e0b] rounded mt-0.5"
-              />
-              <div>
-                <div className="text-xs font-medium text-gray-800 dark:text-[#e6edf3]">Retry On Fail</div>
-                <div className="text-[10px] text-gray-400 dark:text-[#6e7681]">Automatically retry this node when it fails</div>
-              </div>
-            </label>
-          </div>
+          <select
+            value={(node as any).onError || "stopWorkflow"}
+            onChange={(e) => {
+              const onError = e.target.value;
+              const continueOnFail = onError === "continueRegularOutput";
+              onUpdate(node.id, node.config, undefined, { onError, continueOnFail });
+            }}
+            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]/50"
+          >
+            <option value="stopWorkflow">Stop Workflow</option>
+            <option value="continueRegularOutput">Continue (regular output)</option>
+            <option value="continueErrorOutput">Continue (error output)</option>
+          </select>
+          <p className="text-[10px] text-gray-400 dark:text-[#6e7681]">
+            {(node as any).onError === "continueErrorOutput"
+              ? "Error data will be routed to the error output branch"
+              : (node as any).onError === "continueRegularOutput"
+              ? "Error will be ignored and execution continues normally"
+              : "Workflow stops when this node encounters an error"}
+          </p>
+        </div>
+      )}
+
+      {/* Retry On Fail */}
+      {node.category === "action" && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9] flex items-center gap-1.5">
+            🔄 Retry
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer p-2.5 rounded-lg border border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors">
+            <input
+              type="checkbox"
+              checked={!!node.retryOnFail}
+              onChange={(e) => {
+                const retryCount = node.retryCount || 3;
+                const retryIntervalMs = node.retryIntervalMs || 1000;
+                onUpdate(node.id, node.config, undefined, { retryOnFail: e.target.checked, retryCount, retryIntervalMs });
+              }}
+              className="w-3.5 h-3.5 accent-[#f59e0b] rounded mt-0.5"
+            />
+            <div>
+              <div className="text-xs font-medium text-gray-800 dark:text-[#e6edf3]">Retry On Fail</div>
+              <div className="text-[10px] text-gray-400 dark:text-[#6e7681]">Automatically retry this node when it fails</div>
+            </div>
+          </label>
           {node.retryOnFail && (
             <div className="grid grid-cols-2 gap-2 pl-6">
               <div>
@@ -1688,95 +1859,116 @@ export default function WorkflowNodeConfigPanel({ node, onClose, onUpdate, execu
 
   return (
     <DragCtx.Provider value={{ draggedPath, setDraggedPath }}>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-        <div 
+      {/* n8n-style NDV overlay — z-index 100 to cover everything */}
+      <div className="fixed inset-0" style={{ zIndex: 100, color: '#e0e0e6' }} onClick={onClose}>
+        {/* Backdrop — n8n: var(--dialog--overlay--color--background--dark) */}
+        <div className="absolute inset-0" style={{ background: 'rgba(0, 0, 0, 0.6)' }} />
+        {/* Dialog container — n8n: positioned absolutely with margin */}
+        <div
           onClick={e => e.stopPropagation()}
-          className="w-full max-w-7xl h-[90vh] bg-white dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] rounded-xl flex flex-col shadow-2xl overflow-hidden"
+          className="absolute flex flex-col"
+          style={{
+            top: '24px',
+            left: '24px',
+            right: '24px',
+            bottom: '24px',
+            background: '#1a1a2e',
+            borderRadius: '20px',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            color: '#e0e0e6',
+          }}
         >
-          {/* Top Header */}
-          <div className="p-3 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between bg-white dark:bg-[#161b22] flex-shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
+          {/* Header — n8n: var(--ndv--background--color) */}
+          <div className="flex items-center justify-between flex-shrink-0" style={{
+            padding: '4px 16px',
+            background: '#16162a',
+            borderBottom: '1px solid #2a2a40',
+            borderTopLeftRadius: '20px',
+            borderTopRightRadius: '20px',
+            color: '#e0e0e6',
+          }}>
+            <div className="flex items-center gap-2 min-w-0" style={{ marginLeft: '8px' }}>
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-              <div className="text-sm font-semibold text-gray-900 dark:text-[#e6edf3]">{node.label}</div>
-              <div className="text-[10px] font-mono px-2 py-0.5 rounded-full border border-[#30363d] text-[#8b949e]">
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e6' }}>{node.label}</div>
+              <div style={{
+                fontSize: '10px',
+                fontFamily: 'monospace',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: '1px solid #2a2a40',
+                color: '#9b9bb5',
+              }}>
                 {node.type.toUpperCase()}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center rounded-md border border-[#30363d] overflow-hidden">
-                <button className="px-3 py-1.5 text-xs font-medium text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors flex items-center gap-1 border-r border-[#30363d]">
-                  <ChevronDown className="w-3.5 h-3.5 rotate-90" /> Prev
+            <div className="flex items-center gap-1">
+              {onTestStep && (
+                <button
+                  onClick={() => onTestStep(node.id)}
+                  disabled={isTestingStep}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold transition-colors disabled:opacity-50"
+                  style={{ background: '#ff6d5a', borderRadius: '20px' }}
+                >
+                  {isTestingStep ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                  Test step
                 </button>
-                <button className="px-3 py-1.5 text-xs font-medium text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors flex items-center gap-1">
-                  Next <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
-                </button>
-              </div>
-              <div className="w-px h-4 bg-[#30363d] mx-1" />
+              )}
+              <div style={{ width: '1px', height: '16px', background: '#2a2a40', margin: '0 4px' }} />
               <button
                 onClick={onClose}
-                className="px-3 py-1.5 text-xs font-medium rounded-md text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors flex items-center gap-1.5"
+                className="flex items-center justify-center w-8 h-8 rounded transition-colors"
+                style={{ color: '#9b9bb5' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#2a2a40')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <X className="w-3.5 h-3.5" /> Back to Canvas
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Three Columns Grid */}
-          <div className="flex-1 flex min-h-0">
-            
+          {/* Three Columns Grid — n8n NDV layout */}
+          <div className="flex-1 flex min-h-0" style={{ borderRadius: '0 0 20px 20px', overflow: 'hidden' }}>
+
             {/* LEFT COLUMN: INPUT */}
-            <div className="w-[30%] flex flex-col border-r border-[#30363d] bg-[#0d1117]">
-              <div className="p-3 border-b border-[#30363d] flex items-center justify-between bg-[#161b22]">
+            <div className="w-[30%] flex flex-col" style={{ background: '#121222', borderRight: '1px solid #2a2a40' }}>
+              <div className="p-2 px-3 border-b flex items-center justify-between" style={{ borderColor: '#2a2a40', background: '#121222' }}>
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#2f81f7]" />
-                  <span className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider">Input</span>
+                  <span className="uppercase tracking-widest" style={{ fontSize: '11px', fontWeight: 600, color: '#e0e0e6', letterSpacing: '2px' }}>Input</span>
                 </div>
-                <button onClick={() => copyJson(executionData?.input)} className="text-[10px] text-[#8b949e] hover:text-[#e6edf3] flex items-center gap-1 bg-[#21262d] px-2 py-1 rounded border border-[#30363d] transition-colors">
-                  {copiedJson ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                <button onClick={() => copyJson(executionData?.input)} className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors" style={{ color: '#9b9bb5', border: '1px solid #2a2a40' }}>
+                  {copiedJson ? <Check className="w-3 h-3" style={{ color: '#2ebd6b' }} /> : <Copy className="w-3 h-3" />}
                   Copy
                 </button>
               </div>
               <div className="flex-1 overflow-hidden">
                 <DataViewTabs
                   data={executionData?.input || null}
-                  defaultMsg="No input data yet. Execute the workflow to see incoming data."
+                  defaultMsg="No input data yet. Run the workflow to see incoming data."
                   nodeOutputMap={nodeOutputMap}
                   currentNodeId={node.id}
                 />
               </div>
-              <div className="h-40 border-t border-[#30363d] bg-[#161b22] flex flex-col p-3">
-                <div className="text-[10px] font-bold text-[#2f81f7] uppercase mb-3 flex items-center gap-1.5">
-                  ? Previous Nodes
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  <div className="flex items-center justify-between p-2 rounded border border-[#30363d] bg-[#0d1117] group cursor-pointer hover:border-gray-500 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-green-500" />
-                      <span className="text-xs font-medium text-[#e6edf3]">New Lead Captured</span>
-                    </div>
-                    <ChevronDown className="w-3.5 h-3.5 text-[#8b949e] rotate-90 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                </div>
-              </div>
             </div>
 
             {/* MIDDLE COLUMN: PARAMETERS & SETTINGS */}
-            <div className="w-[40%] flex flex-col border-r border-[#30363d] bg-[#0d1117]">
+            <div className="w-[40%] flex flex-col" style={{ background: '#1a1a2e', borderRight: '1px solid #2a2a40' }}>
               {/* Tab Bar */}
-              <div className="flex border-b border-[#30363d] bg-[#161b22] flex-shrink-0 items-center">
+              <div className="flex border-b flex-shrink-0 items-center" style={{ borderColor: '#2a2a40', background: '#16162a' }}>
                 {(["config", "settings"] as const).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`px-5 py-3 text-[11px] font-bold text-center transition-all capitalize relative ${
-                      activeTab === tab
-                        ? "text-[#e6edf3]"
-                        : "text-[#8b949e] hover:text-[#c9d1d9]"
-                    }`}
+                    className="px-5 py-3 text-center transition-all capitalize relative"
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: activeTab === tab ? 600 : 500,
+                      color: activeTab === tab ? '#e0e0e6' : '#9b9bb5',
+                    }}
                   >
                     {tab === "config" ? "Parameters" : "Settings"}
                     {activeTab === tab && (
-                      <div className="absolute bottom-0 left-0 w-full h-[2px] bg-[#2f81f7]" />
+                      <div className="absolute bottom-0 left-0 w-full" style={{ height: '2px', background: '#ff6d5a' }} />
                     )}
                   </button>
                 ))}
@@ -1785,31 +1977,32 @@ export default function WorkflowNodeConfigPanel({ node, onClose, onUpdate, execu
                   <button
                     onClick={() => onTestStep(node.id)}
                     disabled={isTestingStep}
-                    className="flex items-center gap-1.5 mr-3 px-3 py-1.5 rounded-md bg-orange-500 hover:bg-orange-400 text-white text-[11px] font-bold transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 mr-3 px-3 py-1.5 rounded-md text-white text-xs font-bold transition-colors disabled:opacity-50"
+                    style={{ background: '#ff6d5a', borderRadius: '20px' }}
                   >
                     {isTestingStep ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
-                    Execute step
+                    Test step
                   </button>
                 )}
               </div>
-              
+
               <div className="flex-1 overflow-y-auto p-5 space-y-6">
                 {activeTab === "settings" ? (
                   renderSettingsTab()
                 ) : (
                   <>
                     <InputField label="Node Label" value={node.label} onChange={updateLabel} placeholder="Enter a custom label..." />
-                    
+
                     <div className="space-y-4">
-                      <h4 className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider">Configuration</h4>
+                      <h4 className="uppercase tracking-wider" style={{ fontSize: '10px', fontWeight: 600, color: '#9b9bb5' }}>Configuration</h4>
                       {renderConfigFields()}
                     </div>
 
-                    <div className="pt-4 border-t border-[#30363d]">
-                      <h4 className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                    <div className="pt-4" style={{ borderTop: '1px solid #2a2a40' }}>
+                      <h4 className="uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ fontSize: '10px', fontWeight: 600, color: '#9b9bb5' }}>
                         <PinOff className="w-3.5 h-3.5" /> Data Pinning
                       </h4>
-                      <p className="text-[10px] text-[#8b949e]">
+                      <p style={{ fontSize: '10px', color: '#9b9bb5' }}>
                         Run the workflow once to pin output data for repeatable testing.
                       </p>
                       <div className="mt-3">
@@ -1827,47 +2020,19 @@ export default function WorkflowNodeConfigPanel({ node, onClose, onUpdate, execu
             </div>
 
             {/* RIGHT COLUMN: OUTPUT */}
-            <div className="w-[30%] flex flex-col bg-[#0d1117]">
-              <div className="p-3 border-b border-[#30363d] flex items-center justify-between bg-[#161b22]">
+            <div className="w-[30%] flex flex-col" style={{ background: '#121222' }}>
+              <div className="p-2 px-3 border-b flex items-center justify-between" style={{ borderColor: '#2a2a40', background: '#121222' }}>
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                  <span className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider">Output</span>
+                  <span className="uppercase tracking-widest" style={{ fontSize: '11px', fontWeight: 600, color: '#e0e0e6', letterSpacing: '2px' }}>Output</span>
                 </div>
               </div>
               <div className="flex-1 overflow-hidden">
                 <DataViewTabs
                   data={executionData?.output || null}
-                  defaultMsg="No output data yet."
+                  defaultMsg="No output data yet. Execute this node to see results."
                   onExecute={onTestStep ? () => onTestStep(node.id) : undefined}
                   isRunning={isTestingStep}
                 />
-              </div>
-              <div className="h-40 border-t border-[#30363d] bg-[#161b22] flex flex-col p-3">
-                <div className="text-[10px] font-bold text-[#2f81f7] uppercase mb-3 flex items-center gap-1.5">
-                  ? Next Nodes
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  <div className="flex items-center justify-between p-2 rounded border border-[#30363d] bg-[#0d1117] group cursor-pointer hover:border-gray-500 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-red-500" />
-                      <span className="text-xs font-medium text-[#e6edf3]">Request Phone Email</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 border border-red-500/20">No</span>
-                      <ChevronDown className="w-3.5 h-3.5 text-[#8b949e] -rotate-90 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded border border-[#30363d] bg-[#0d1117] group cursor-pointer hover:border-gray-500 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-[#2f81f7]" />
-                      <span className="text-xs font-medium text-[#e6edf3]">AI Discovery Call</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-500/10 text-green-500 border border-green-500/20">Yes</span>
-                      <ChevronDown className="w-3.5 h-3.5 text-[#8b949e] -rotate-90 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
 

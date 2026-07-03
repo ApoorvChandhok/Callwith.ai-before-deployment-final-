@@ -6,9 +6,21 @@
  *   {{$json["field name"]}}        — bracket notation
  *   {{$node["NodeLabel"].json.x}}  — reference another node's output
  *   {{$now}}                       — current ISO timestamp
- *   {{$runIndex}}                  — current loop iteration index
+ *   {{$today}}                     — current date (start of day)
+ *   {{$runIndex}}                  — current run index
+ *   {{$itemIndex}}                 — current item index in batch
+ *   {{$workflow.name}}             — workflow name
+ *   {{$workflow.id}}               — workflow ID
+ *   {{$execution.id}}              — execution ID
+ *   {{$input.all()}}               — all input items
+ *   {{$input.first()}}             — first input item
+ *   {{$input.last()}}              — last input item
+ *   {{$binary}}                    — binary data placeholder
  *   {{lead.email}}                 — legacy template (backwards compat)
+ *   {{=expression}}                — n8n-style expression prefix
  */
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ExpressionContext {
   /** Current node's input JSON */
@@ -17,15 +29,80 @@ export interface ExpressionContext {
   $nodes?: Record<string, { json: Record<string, any> }>;
   /** Current run/loop index */
   $runIndex?: number;
+  /** Current item index in batch */
+  $itemIndex?: number;
   /** Trigger data */
   $trigger?: Record<string, any>;
+  /** Workflow metadata */
+  $workflow?: { name?: string; id?: string; active?: boolean };
+  /** Execution metadata */
+  $execution?: { id?: string; mode?: string };
+  /** Binary data placeholder */
+  $binary?: Record<string, any>;
   /** Legacy lead object (backwards compat) */
   lead?: Record<string, any>;
   /** Legacy call object (backwards compat) */
   call?: Record<string, any>;
   /** Loop tracking state keyed by loop_items node ID */
   $loopState?: Record<string, { index: number; items: any[] }>;
+  /** Input items array */
+  $inputItems?: any[];
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Build the $input accessor from context.
+ */
+function buildInputAccessor(ctx: ExpressionContext) {
+  const items = ctx.$inputItems ?? [ctx.$json];
+  return {
+    all: () => items.map((d: any) => ({ json: d })),
+    first: () => ({ json: items[0] ?? {} }),
+    last: () => ({ json: items[items.length - 1] ?? {} }),
+    item: { json: items[ctx.$itemIndex ?? 0] ?? items[0] ?? {} },
+  };
+}
+
+/**
+ * Build the $node["Label"] accessor proxy from node output map.
+ */
+function buildNodeAccessor(
+  nodes: Record<string, { json: Record<string, any> }>
+): (name: string) => { json: Record<string, any> } {
+  return (name: string) => nodes[name] ?? { json: {} };
+}
+
+/**
+ * Build the scope object for expression evaluation.
+ */
+function buildScope(ctx: ExpressionContext): Record<string, any> {
+  const now = new Date();
+  return {
+    $json: ctx.$json ?? {},
+    $input: buildInputAccessor(ctx),
+    $node: buildNodeAccessor(ctx.$nodes ?? {}),
+    $now: now.toISOString(),
+    $today: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(),
+    $runIndex: ctx.$runIndex ?? 0,
+    $itemIndex: ctx.$itemIndex ?? 0,
+    $trigger: ctx.$trigger ?? {},
+    $binary: ctx.$binary ?? {},
+    $workflow: {
+      name: ctx.$workflow?.name ?? "Untitled Workflow",
+      id: ctx.$workflow?.id ?? "",
+      active: ctx.$workflow?.active ?? false,
+    },
+    $execution: {
+      id: ctx.$execution?.id ?? "",
+      mode: ctx.$execution?.mode ?? "manual",
+    },
+    lead: ctx.lead ?? ctx.$json?.lead ?? {},
+    call: ctx.call ?? ctx.$json?.call ?? {},
+  };
+}
+
+// ── Expression Resolution ─────────────────────────────────────────────────────
 
 /**
  * Resolve a single expression like `{{$json.email}}` against a context.
@@ -35,18 +112,9 @@ export function resolveExpression(expr: string, ctx: ExpressionContext): any {
   const inner = expr.slice(2, -2).trim(); // strip {{ and }}
 
   try {
-    // Build a safe evaluation scope
-    const scope: Record<string, any> = {
-      $json: ctx.$json ?? {},
-      $node: buildNodeAccessor(ctx.$nodes ?? {}),
-      $now: new Date().toISOString(),
-      $runIndex: ctx.$runIndex ?? 0,
-      $trigger: ctx.$trigger ?? {},
-      lead: ctx.lead ?? ctx.$json?.lead ?? {},
-      call: ctx.call ?? ctx.$json?.call ?? {},
-    };
+    const scope = buildScope(ctx);
 
-    // Use Function constructor for safe evaluation (no access to outer scope)
+    // Build function with scope variables
     const keys = Object.keys(scope);
     const values = Object.values(scope);
     // eslint-disable-next-line no-new-func
@@ -64,6 +132,12 @@ export function resolveExpression(expr: string, ctx: ExpressionContext): any {
  */
 export function resolveTemplate(template: string, ctx: ExpressionContext): any {
   if (typeof template !== "string") return template;
+
+  // n8n-style: ={{ expression }} prefix
+  const n8nMatch = template.match(/^=\{\{(.+)\}\}$/);
+  if (n8nMatch) {
+    return resolveExpression(`{{${n8nMatch[1]}}}`, ctx);
+  }
 
   const singleExprPattern = /^\{\{.+\}\}$/;
   if (singleExprPattern.test(template.trim())) {
@@ -106,14 +180,7 @@ export function resolveConfigTemplates(
   return resolved;
 }
 
-/**
- * Build the $node["Label"] accessor proxy from node output map.
- */
-function buildNodeAccessor(
-  nodes: Record<string, { json: Record<string, any> }>
-): Record<string, { json: Record<string, any> }> {
-  return nodes;
-}
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 /**
  * Validate whether a string contains expression syntax.
@@ -129,6 +196,8 @@ export function extractExpressions(value: string): string[] {
   const matches = value.match(/\{\{[^}]+\}\}/g);
   return matches ?? [];
 }
+
+// ── Switch Rule Evaluation ────────────────────────────────────────────────────
 
 /**
  * Evaluate a Switch rule against a data context.
@@ -172,6 +241,8 @@ export function evaluateSwitchRule(
   }
 }
 
+// ── Code Node Execution ───────────────────────────────────────────────────────
+
 /**
  * Execute a code node's JavaScript safely in the browser.
  * Returns { success, output, error }.
@@ -182,21 +253,31 @@ export function executeCodeNode(
 ): { success: boolean; output: any; error?: string; executionMs: number } {
   const start = performance.now();
   try {
-    // Build $input helper
+    const items = Array.isArray(inputData) ? inputData : [inputData];
+
+    // Build $input helper (n8n-compatible)
     const $input = {
-      all: () => (Array.isArray(inputData) ? inputData.map((d: any) => ({ json: d })) : [{ json: inputData }]),
-      first: () => ({ json: Array.isArray(inputData) ? inputData[0] : inputData }),
-      last: () => ({
-        json: Array.isArray(inputData) ? inputData[inputData.length - 1] : inputData,
-      }),
-      item: { json: Array.isArray(inputData) ? inputData[0] : inputData },
+      all: () => items.map((d: any) => ({ json: d })),
+      first: () => ({ json: items[0] ?? {} }),
+      last: () => ({ json: items[items.length - 1] ?? {} }),
+      item: { json: items[0] ?? {} },
     };
 
-    const $json = Array.isArray(inputData) ? (inputData[0] ?? {}) : (inputData ?? {});
+    const $json = items[0] ?? {};
+
+    // Helper functions available in code nodes
+    const helpers = {
+      returnJsonArray: (items: any[]) => items.map((d: any) => ({ json: d })),
+      $if: (condition: any, trueVal: any, falseVal: any) => condition ? trueVal : falseVal,
+      $isEmpty: (val: any) => val === null || val === undefined || val === "" || (Array.isArray(val) && val.length === 0),
+    };
 
     // eslint-disable-next-line no-new-func
-    const fn = new Function("$input", "$json", `"use strict";\n${code}`);
-    const result = fn($input, $json);
+    const fn = new Function(
+      "$input", "$json", "helpers",
+      `"use strict";\n${code}`
+    );
+    const result = fn($input, $json, helpers);
     const executionMs = Math.round(performance.now() - start);
     return { success: true, output: result ?? {}, executionMs };
   } catch (err: any) {
@@ -204,3 +285,37 @@ export function executeCodeNode(
     return { success: false, output: null, error: err?.message ?? String(err), executionMs };
   }
 }
+
+// ── Expression Autocomplete Data ──────────────────────────────────────────────
+
+/**
+ * Available expression variables for autocomplete hints.
+ */
+export const EXPRESSION_VARIABLES = [
+  { name: "$json", description: "Current item's JSON data", type: "object" },
+  { name: "$input", description: "Input data from previous node", type: "object" },
+  { name: "$input.all()", description: "All input items as array", type: "array" },
+  { name: "$input.first()", description: "First input item", type: "object" },
+  { name: "$input.last()", description: "Last input item", type: "object" },
+  { name: "$node[\"Name\"]", description: "Reference another node's output", type: "object" },
+  { name: "$now", description: "Current ISO timestamp", type: "string" },
+  { name: "$today", description: "Today's date (start of day)", type: "string" },
+  { name: "$runIndex", description: "Current run/loop index", type: "number" },
+  { name: "$itemIndex", description: "Current item index in batch", type: "number" },
+  { name: "$workflow.name", description: "Workflow name", type: "string" },
+  { name: "$workflow.id", description: "Workflow ID", type: "string" },
+  { name: "$execution.id", description: "Execution ID", type: "string" },
+  { name: "$binary", description: "Binary data", type: "object" },
+  { name: "$trigger", description: "Trigger data", type: "object" },
+];
+
+/**
+ * Available expression functions for autocomplete.
+ */
+export const EXPRESSION_FUNCTIONS = [
+  { name: "$if(condition, trueVal, falseVal)", description: "Conditional expression" },
+  { name: "$isEmpty(value)", description: "Check if value is empty" },
+  { name: "$toString(value)", description: "Convert to string" },
+  { name: "$toNumber(value)", description: "Convert to number" },
+  { name: "$isArray(value)", description: "Check if value is an array" },
+];

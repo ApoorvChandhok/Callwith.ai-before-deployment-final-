@@ -5,15 +5,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Save, Play, Pause, PanelLeftClose, PanelLeft, History,
   Trash2, Loader2, Sparkles, X, Download, Upload, Settings2, CheckCircle2,
+  Undo2, Redo2, AlignCenter,
 } from "lucide-react";
 import type { WorkflowNode, WorkflowEdge, NodeMetadata } from "@/lib/workflow-types";
 import { getWorkflow, createWorkflow, updateWorkflow } from "@/lib/workflow-actions";
-import { resolveConfigTemplates, evaluateSwitchRule, executeCodeNode } from "@/lib/expression-engine";
+import { resolveConfigTemplates, resolveExpression, evaluateSwitchRule, executeCodeNode } from "@/lib/expression-engine";
 import WorkflowCanvas from "@/components/workflows/WorkflowCanvas";
 import WorkflowNodePalette from "@/components/workflows/WorkflowNodePalette";
 import WorkflowNodeConfigPanel from "@/components/workflows/WorkflowNodeConfigPanel";
 import { useCopilotContext } from "@/components/copilot/CopilotContext";
 import { validateAllNodes } from "@/lib/workflow-validation";
+import {
+  createHistoryState, pushSnapshot, undo as historyUndo, redo as historyRedo,
+  canUndo, canRedo, type HistoryState,
+} from "@/lib/workflow-history";
+import CredentialModal from "@/components/workflows/CredentialModal";
+import WorkflowSettingsModal, { type WorkflowSettings } from "@/components/workflows/WorkflowSettingsModal";
 
 // Lazy import AI generate modal
 const AiGenerateModalLazy = React.lazy(() => import("@/components/workflows/AiGenerateModal"));
@@ -172,26 +179,48 @@ async function buildNodeOutput(
         break;
 
       case "loop_items": {
-        // n8n-style Loop Over Items: returns one item (or batch) per iteration
-        // Batch size defaults to 1 (one item per iteration)
-        const allItems = Array.isArray(input.items) ? input.items
-          : Array.isArray(input.leads) ? input.leads
-          : Array.isArray(input) ? input
-          : [];
+        // n8n-style SplitInBatches: process items one at a time (or in batches)
+        // Uses nodeContext to track state across iterations
         const batchSize = resolvedConfig.batchSize || 1;
-        const batch = allItems.slice(0, batchSize);
-        const remaining = allItems.slice(batchSize);
+
+        // Get items from various possible input shapes
+        let allLoopItems: any[] = [];
+        if (Array.isArray(input.items) && input.items.length > 0) {
+          allLoopItems = input.items;
+        } else if (Array.isArray(input.leads) && input.leads.length > 0) {
+          allLoopItems = input.leads;
+        } else if (Array.isArray(input.allItems) && input.allItems.length > 0) {
+          allLoopItems = input.allItems;
+        } else if (Array.isArray(input.batch) && input.batch.length > 0) {
+          // Re-queued from loop back — items are in batch
+          allLoopItems = input.batch;
+        }
+
+        // If we got items from the expression, resolve it
+        if (allLoopItems.length === 0 && resolvedConfig.itemsExpression) {
+          try {
+            const exprItems = resolveExpression(resolvedConfig.itemsExpression, { $json: input, lead: input.lead, call: input.call });
+            if (Array.isArray(exprItems)) allLoopItems = exprItems;
+          } catch {}
+        }
+
+        const batch = allLoopItems.slice(0, batchSize);
+        const remaining = allLoopItems.slice(batchSize);
+
         output = {
           batch,
           items: batch,
-          currentItem: batch[0] || input,
+          currentItem: batch[0] || null,
           currentIndex: 0,
-          totalItems: allItems.length,
+          totalItems: allLoopItems.length,
           itemsLeft: remaining.length,
           hasMore: remaining.length > 0,
-          allItems,
+          allItems: allLoopItems,
+          // Spread input so downstream nodes get lead data
           ...input,
-          item: batch[0] || input,
+          // Ensure lead data is accessible as top-level
+          lead: batch[0] || input.lead || input,
+          item: batch[0] || input.item || input,
         };
         break;
       }
@@ -217,7 +246,8 @@ async function buildNodeOutput(
 
       // ── Messaging ─────────────────────────────────────────────
       case "send_gmail": {
-        const sentTo = resolvedConfig.to || input.lead?.email || "unknown@example.com";
+        const leadDataGmail = input.lead || input.item || input;
+        const sentTo = resolvedConfig.to || leadDataGmail.email || leadDataGmail.Email || "unknown@example.com";
         const subject = resolvedConfig.subject || "No subject";
         const body = resolvedConfig.body || "No content";
         
@@ -325,40 +355,60 @@ async function buildNodeOutput(
         break;
 
       // ── CRM ────────────────────────────────────────────────────
-      case "update_lead_status":
+      case "update_lead_status": {
+        const statusLead = input.lead || input.item || input;
         output = {
           success: true,
-          previousStatus: input.lead?.status || "New",
+          previousStatus: statusLead.status || "New",
           currentStatus: resolvedConfig.newStatus || "Contacted",
-          lead: { ...input.lead, status: resolvedConfig.newStatus }
+          lead: { ...statusLead, status: resolvedConfig.newStatus }
         };
         break;
+      }
 
-      case "add_tag":
+      case "add_tag": {
+        const tagLead = input.lead || input.item || input;
         output = {
           success: true,
           tagAdded: resolvedConfig.tagName || "",
-          lead: { ...input.lead, tags: [...(input.lead?.tags || []), resolvedConfig.tagName] }
+          lead: { ...tagLead, tags: [...(tagLead.tags || []), resolvedConfig.tagName] }
         };
         break;
+      }
 
-      case "remove_tag":
+      case "remove_tag": {
+        const removeTagLead = input.lead || input.item || input;
         output = {
           success: true,
           tagRemoved: resolvedConfig.tagName || "",
-          lead: { ...input.lead, tags: (input.lead?.tags || []).filter((t: string) => t !== resolvedConfig.tagName) }
+          lead: { ...removeTagLead, tags: (removeTagLead.tags || []).filter((t: string) => t !== resolvedConfig.tagName) }
         };
         break;
+      }
 
-      case "trigger_outbound_call":
+      case "trigger_outbound_call": {
+        // Get lead data from various sources
+        const leadData = input.lead || input.item || input;
+        const phone = resolvedConfig.phoneNumber || leadData.phone || leadData.phoneNumber || "";
+        const leadName = leadData.name || leadData.Name || "";
+        const leadEmail = leadData.email || leadData.Email || "";
+        const promptText = resolvedConfig.message || resolvedConfig.agentConfig || `You are calling ${leadName} to discuss our project offering.`;
+
+        // Resolve expressions in phone and prompt
+        const resolvedPhone = typeof phone === "string" && phone.includes("{{") ? resolveExpression(phone, { $json: input, lead: leadData }) : phone;
+        const resolvedPrompt = typeof promptText === "string" && promptText.includes("{{") ? resolveExpression(promptText, { $json: input, lead: leadData }) : promptText;
+
         output = {
           success: true,
-          callSid: `call_ai_${Math.random().toString(36).substring(2, 12)}`,
-          phoneNumber: resolvedConfig.phoneNumber || input.lead?.phone,
+          phoneNumber: resolvedPhone,
+          leadName,
+          leadEmail,
+          prompt: resolvedPrompt,
           status: "queued",
-          estimatedStartTime: new Date(Date.now() + 5000).toISOString()
+          calledAt: new Date().toISOString(),
         };
         break;
+      }
 
       case "add_note":
         output = {
@@ -438,14 +488,23 @@ async function buildNodeOutput(
         };
         break;
 
-      case "send_notification":
+      case "send_notification": {
+        const notifLead = input.lead || input.item || input;
+        const notifMessage = resolvedConfig.message || "";
+        // Resolve expressions in message
+        const resolvedMessage = typeof notifMessage === "string" && notifMessage.includes("{{")
+          ? resolveExpression(notifMessage, { $json: input, lead: notifLead })
+          : notifMessage;
         output = {
           success: true,
           channel: resolvedConfig.channel || "in_app",
+          message: resolvedMessage,
           sent: true,
-          recipient: resolvedConfig.recipient || "team"
+          recipient: resolvedConfig.recipient || "team",
+          sentAt: new Date().toISOString(),
         };
         break;
+      }
 
       case "wait_delay":
         output = {
@@ -458,6 +517,190 @@ async function buildNodeOutput(
       case "sticky_note":
         output = {};
         break;
+
+      // ── n8n-Style Data Transformation Nodes ──────────────────────────────────
+      case "set_fields": {
+        // Edit Fields (Set) — set/edit fields on items
+        const newFields: Record<string, any> = {};
+        (resolvedConfig.fields || []).forEach((f: any) => {
+          if (f.name) newFields[f.name] = f.value;
+        });
+        output = { success: true, fieldsSet: newFields, itemCount: 1 };
+        break;
+      }
+
+      case "aggregate": {
+        // Aggregate Items — combine multiple items
+        const mode = resolvedConfig.mode || "append";
+        output = {
+          success: true,
+          mode,
+          itemCount: Array.isArray(input.items) ? input.items.length : 1,
+          result: input.items || [input],
+          aggregated: true,
+        };
+        break;
+      }
+
+      case "remove_duplicates": {
+        // Remove Duplicates — deduplicate by key field
+        const items = Array.isArray(input.items) ? input.items : [input];
+        const key = resolvedConfig.keyField || "";
+        const seen = new Set();
+        const unique = items.filter((item: any) => {
+          const val = key ? item[key] : JSON.stringify(item);
+          if (seen.has(val)) return false;
+          seen.add(val);
+          return true;
+        });
+        output = {
+          success: true,
+          originalCount: items.length,
+          uniqueCount: unique.length,
+          duplicatesRemoved: items.length - unique.length,
+          items: unique,
+        };
+        break;
+      }
+
+      case "summarize": {
+        // Summarize — aggregate with grouping
+        output = {
+          success: true,
+          mode: resolvedConfig.mode || "group_by",
+          groupByField: resolvedConfig.groupByField || "",
+          aggregateFunction: resolvedConfig.aggregateFunction || "count",
+          result: input.items || [input],
+          summarized: true,
+        };
+        break;
+      }
+
+      case "extract_from_file": {
+        // Extract from File — parse file content
+        output = {
+          success: true,
+          fileType: resolvedConfig.fileType || "json",
+          extracted: true,
+          data: input,
+        };
+        break;
+      }
+
+      case "convert_file": {
+        // Convert to/from File — format conversion
+        output = {
+          success: true,
+          fromFormat: resolvedConfig.fromFormat || "json",
+          toFormat: resolvedConfig.toFormat || "csv",
+          converted: true,
+          data: input,
+        };
+        break;
+      }
+
+      case "date_time": {
+        // Date & Time — format/parse/calculate dates
+        const op = resolvedConfig.operation || "formatDate";
+        const now = new Date();
+        let result: any = {};
+        switch (op) {
+          case "formatDate":
+            result = { formatted: now.toISOString(), format: resolvedConfig.format || "yyyy-MM-dd" };
+            break;
+          case "addToDate":
+            result = { date: now.toISOString(), added: resolvedConfig.addition || 1, unit: resolvedConfig.additionUnit || "hours" };
+            break;
+          case "subtractFromDate":
+            result = { date: now.toISOString(), subtracted: resolvedConfig.addition || 1, unit: resolvedConfig.additionUnit || "hours" };
+            break;
+          case "getCurrentDate":
+            result = { date: now.toISOString() };
+            break;
+          case "extractDate":
+            result = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+            break;
+          default:
+            result = { date: now.toISOString() };
+        }
+        output = { success: true, operation: op, ...result };
+        break;
+      }
+
+      case "edit_fields": {
+        // Edit Fields — set/remove/rename
+        const edited: Record<string, any> = {};
+        (resolvedConfig.fields || []).forEach((f: any) => {
+          if (f.action === "set" && f.name) edited[f.name] = f.value;
+          else if (f.action === "remove" && f.name) delete edited[f.name];
+        });
+        output = { success: true, fieldsEdited: edited };
+        break;
+      }
+
+      case "read_csv_leads": {
+        // Read CSV — client-side demo with your actual leads data
+        const demoLeads = [
+          { sno: "1", name: "Abhinav Saxena", phone: "919911778218", location: "Delhi", email: "Abhinavsaxena6767@GMAIL.COM" },
+          { sno: "2", name: "Apoorv", phone: "919999424997", location: "Goa", email: "Apoorvchandhok@gmail.com" },
+        ];
+        const limit = resolvedConfig.limit || 0;
+        const leads = limit > 0 ? demoLeads.slice(0, limit) : demoLeads;
+        output = {
+          success: true,
+          leads,
+          count: leads.length,
+          items: leads,
+          allItems: leads,
+          ...leads[0] && { lead: leads[0] },
+        };
+        break;
+      }
+
+      case "no_operation": {
+        // No Operation — pure passthrough
+        output = { success: true, passthrough: true };
+        break;
+      }
+
+      case "stop_error": {
+        // Stop and Error — always throws
+        const errMsg = resolvedConfig.errorMessage || "Workflow stopped by Stop and Error node";
+        return { output: null, status: "error", error: errMsg, executionMs: Math.round(performance.now() - start) };
+      }
+
+      case "respond_webhook": {
+        // Respond to Webhook — send response
+        output = {
+          success: true,
+          responseCode: resolvedConfig.responseCode || 200,
+          responseBody: resolvedConfig.responseBody || "",
+          sent: true,
+        };
+        break;
+      }
+
+      case "split_in_batches": {
+        // Split In Batches — n8n-style loop
+        const allBatchItems = Array.isArray(input.items) ? input.items
+          : Array.isArray(input.leads) ? input.leads
+          : Array.isArray(input) ? input
+          : [];
+        const batchSize = resolvedConfig.batchSize || 10;
+        const batch = allBatchItems.slice(0, batchSize);
+        const remaining = allBatchItems.slice(batchSize);
+        output = {
+          batch,
+          items: batch,
+          currentIndex: 0,
+          totalItems: allBatchItems.length,
+          itemsLeft: remaining.length,
+          hasMore: remaining.length > 0,
+          allItems: allBatchItems,
+          ...input,
+        };
+        break;
+      }
 
       default:
         output = { success: true, nodeType: node.type };
@@ -480,6 +723,7 @@ function BuilderContent() {
 
   const [workflowName, setWorkflowName] = useState("Untitled Workflow");
   const [workflowDescription, setWorkflowDescription] = useState("");
+  const [workflowTags, setWorkflowTags] = useState<string[]>([]);
   const [nodes, setNodes] = useState<WorkflowNode[]>([]);
   const [edges, setEdges] = useState<WorkflowEdge[]>([]);
   const [isActive, setIsActive] = useState(false);
@@ -490,6 +734,7 @@ function BuilderContent() {
   const [loading, setLoading] = useState(!!editId);
 
   const [nodeExecutionStatuses, setNodeExecutionStatuses] = useState<Record<string, "idle" | "running" | "success" | "error">>({});
+  const [nodeExecutionTimes, setNodeExecutionTimes] = useState<Record<string, number>>({});
   const [isExecuting, setIsExecuting] = useState(false);
   const [executions, setExecutions] = useState<any[]>([]);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
@@ -501,8 +746,149 @@ function BuilderContent() {
   const [importJsonText, setImportJsonText] = useState("");
   const [importError, setImportError] = useState("");
   const [showSuccessAnim, setShowSuccessAnim] = useState(false);
+  const [showNodeCreator, setShowNodeCreator] = useState(false);
+  const [insertBetweenEdge, setInsertBetweenEdge] = useState<{ sourceId: string; targetId: string; sourcePort?: string } | null>(null);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings>({
+    timezone: "DEFAULT",
+    executionOrder: "v1",
+    saveDataSuccessExecution: "all",
+    saveDataErrorExecution: "all",
+    saveExecutionProgress: true,
+    saveManualExecutions: true,
+    executionTimeout: 0,
+  });
+  const [versions, setVersions] = useState<any[]>([]);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Undo/Redo History ──────────────────────────────────────────────────────
+  const historyRef = useRef<HistoryState>(createHistoryState(100));
+
+  const snapshotCurrent = useCallback(() => {
+    return { nodes, edges, workflowName, workflowDescription };
+  }, [nodes, edges, workflowName, workflowDescription]);
+
+  const pushToHistory = useCallback(() => {
+    historyRef.current = pushSnapshot(historyRef.current, snapshotCurrent());
+  }, [snapshotCurrent]);
+
+  const handleUndo = useCallback(() => {
+    const result = historyUndo(historyRef.current, snapshotCurrent());
+    if (result.snapshot) {
+      historyRef.current = result.state;
+      setNodes(result.snapshot.nodes);
+      setEdges(result.snapshot.edges);
+      if (result.snapshot.workflowName) setWorkflowName(result.snapshot.workflowName);
+      if (result.snapshot.workflowDescription) setWorkflowDescription(result.snapshot.workflowDescription);
+    }
+  }, [snapshotCurrent]);
+
+  const handleRedo = useCallback(() => {
+    const result = historyRedo(historyRef.current, snapshotCurrent());
+    if (result.snapshot) {
+      historyRef.current = result.state;
+      setNodes(result.snapshot.nodes);
+      setEdges(result.snapshot.edges);
+      if (result.snapshot.workflowName) setWorkflowName(result.snapshot.workflowName);
+      if (result.snapshot.workflowDescription) setWorkflowDescription(result.snapshot.workflowDescription);
+    }
+  }, [snapshotCurrent]);
+
+  const [historyInfo, setHistoryInfo] = useState({ undoCount: 0, redoCount: 0 });
+
+  // Update history info on every state change
+  useEffect(() => {
+    setHistoryInfo({
+      undoCount: historyRef.current.past.length,
+      redoCount: historyRef.current.future.length,
+    });
+  }, [nodes, edges]);
+
+  // ── Save ─────────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveStatus("idle");
+    try {
+      const data = { name: workflowName, description: workflowDescription, nodes, edges, isActive, tags: workflowTags };
+      let savedId = editId;
+      if (editId) {
+        await updateWorkflow(editId, data);
+      } else {
+        const created = await createWorkflow(data);
+        savedId = created.id;
+        window.history.replaceState(null, "", `/workflows/builder?id=${created.id}`);
+      }
+      // Auto-save version
+      if (savedId) {
+        try {
+          await fetch("/api/workflow/versions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ workflowId: savedId, snapshot: data }),
+          });
+        } catch {}
+      }
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2500);
+    } catch (err) {
+      console.error("Failed to save:", err);
+      setSaveStatus("error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Keyboard Shortcuts ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isCtrl = e.ctrlKey || e.metaKey;
+
+      // Ctrl+Z — Undo
+      if (isCtrl && !e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      // Ctrl+Shift+Z — Redo
+      if (isCtrl && e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      // Ctrl+S — Save
+      if (isCtrl && e.key === "s") {
+        e.preventDefault();
+        handleSave();
+        return;
+      }
+
+      // N — Open node creator (when not typing in an input)
+      if (e.key === "n" && !isCtrl && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault();
+        setShowNodeCreator(true);
+        return;
+      }
+
+      // Escape — Close panels
+      if (e.key === "Escape") {
+        if (showNodeCreator) {
+          setShowNodeCreator(false);
+          setInsertBetweenEdge(null);
+        } else if (selectedNodeId) {
+          setSelectedNodeId(null);
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo, handleRedo, handleSave, showNodeCreator, selectedNodeId]);
 
   const { setCopilotContext } = useCopilotContext();
 
@@ -595,6 +981,7 @@ function BuilderContent() {
   // ── Node Operations ──────────────────────────────────────────────────────────
   const handleAddNode = useCallback(
     (metadata: NodeMetadata, position?: { x: number; y: number }) => {
+      pushToHistory();
       let x = 300;
       let y = 0;
       if (position) {
@@ -615,15 +1002,17 @@ function BuilderContent() {
       };
       setNodes((prev) => [...prev, newNode]);
       setSelectedNodeId(newNode.id);
+      setShowNodeCreator(false);
     },
-    [nodes]
+    [nodes, pushToHistory]
   );
 
   const handleDeleteNode = useCallback((id: string) => {
+    pushToHistory();
     setNodes((prev) => prev.filter((n) => n.id !== id));
     setEdges((prev) => prev.filter((e) => e.sourceId !== id && e.targetId !== id));
     setSelectedNodeId((prev) => (prev === id ? null : prev));
-  }, []);
+  }, [pushToHistory]);
 
   const handleMoveNode = useCallback(
     (id: string, position: { x: number; y: number }) => {
@@ -648,6 +1037,7 @@ function BuilderContent() {
   // ── Edge Operations ──────────────────────────────────────────────────────────
   const handleAddEdge = useCallback(
     (sourceId: string, targetId: string, sourcePort?: string) => {
+      pushToHistory();
       const exists = edges.find((e) => e.sourceId === sourceId && e.targetId === targetId);
       if (exists) return;
       const newEdge: WorkflowEdge = {
@@ -659,12 +1049,13 @@ function BuilderContent() {
       };
       setEdges((prev) => [...prev, newEdge]);
     },
-    [edges]
+    [edges, pushToHistory]
   );
 
   const handleDeleteEdge = useCallback((id: string) => {
+    pushToHistory();
     setEdges((prev) => prev.filter((e) => e.id !== id));
-  }, []);
+  }, [pushToHistory]);
 
   // ── Manual Run Simulator ─────────────────────────────────────────────────────
   const runWorkflowManually = async () => {
@@ -691,6 +1082,7 @@ function BuilderContent() {
     const initialStatuses: Record<string, "idle" | "running" | "success" | "error"> = {};
     nodes.forEach((n) => { initialStatuses[n.id] = "idle"; });
     setNodeExecutionStatuses(initialStatuses);
+    setNodeExecutionTimes({});
     setExecutions((prev) => [newExecution, ...prev]);
     setSelectedExecutionId(executionId);
 
@@ -745,6 +1137,7 @@ function BuilderContent() {
 
         statuses[node.id] = status;
         setNodeExecutionStatuses({ ...statuses });
+        setNodeExecutionTimes((prev) => ({ ...prev, [node.id]: executionMs }));
 
         nodeOutputMap[node.label] = output;
         nodeExecs[node.id] = {
@@ -758,7 +1151,12 @@ function BuilderContent() {
         const outgoingEdges = edges.filter((e) => e.sourceId === node.id);
 
         // Route based on node type
-        if (node.type === "if_else" || node.type === "check_lead_field" || node.type === "check_sentiment" || node.type === "filter_by_tag" || node.type === "check_call_count") {
+        // Check if node has error output and failed — route to error port
+        const nodeOnError = (node as any).onError;
+        if (status === "error" && nodeOnError === "continueErrorOutput") {
+          const errorEdges = outgoingEdges.filter((e) => e.sourcePort === "error");
+          errorEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
+        } else if (node.type === "if_else" || node.type === "check_lead_field" || node.type === "check_sentiment" || node.type === "filter_by_tag" || node.type === "check_call_count") {
           const chosenBranch = output.branch;
           const matchedEdges = outgoingEdges.filter((e) => e.sourcePort === chosenBranch);
           matchedEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
@@ -766,10 +1164,8 @@ function BuilderContent() {
           const routedPort = output.outputIndex === -1 ? "fallback" : `output_${output.outputIndex}`;
           const matchedEdges = outgoingEdges.filter((e) => e.sourcePort === routedPort || (!e.sourcePort && output.outputIndex === -1));
           matchedEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
-        } else if (node.type === "loop_items") {
+        } else if (node.type === "loop_items" || node.type === "split_in_batches") {
           // n8n-style loop: if there are remaining items, re-queue the loop node
-          // The loop output goes to the next node (which processes one item at a time)
-          // After processing, the loop node needs to be called again for the next item
           const allItems = output.allItems || [];
           const batchSize = output.batch?.length || 1;
           const remaining = output.allItems ? output.allItems.slice(batchSize) : [];
@@ -779,7 +1175,7 @@ function BuilderContent() {
             const loopEdges = outgoingEdges.filter((e) => e.sourcePort === "loop");
             loopEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
 
-            // Re-queue the loop node itself with remaining items (this is the key n8n pattern)
+            // Re-queue the loop node itself with remaining items
             queue.push({
               nodeId: node.id,
               parentOutput: { ...input, items: remaining, leads: remaining, allItems: remaining, item: remaining[0] }
@@ -789,6 +1185,9 @@ function BuilderContent() {
             const doneEdges = outgoingEdges.filter((e) => e.sourcePort === "done");
             doneEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
           }
+        } else if (node.type === "stop_error") {
+          // Stop and Error — halt execution, do not queue any children
+          overallStatus = "error";
         } else {
           outgoingEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
         }
@@ -917,28 +1316,6 @@ function BuilderContent() {
     }
   };
 
-  // ── Save ─────────────────────────────────────────────────────────────────────
-  const handleSave = async () => {
-    setSaving(true);
-    setSaveStatus("idle");
-    try {
-      const data = { name: workflowName, description: workflowDescription, nodes, edges, isActive };
-      if (editId) {
-        await updateWorkflow(editId, data);
-      } else {
-        const created = await createWorkflow(data);
-        window.history.replaceState(null, "", `/workflows/builder?id=${created.id}`);
-      }
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 2500);
-    } catch (err) {
-      console.error("Failed to save:", err);
-      setSaveStatus("error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // ── AI Generate workflow ──────────────────────────────────────────────────────
   const handleAiSuccess = () => {
     // AiGenerateModal navigates to the new workflow itself
@@ -946,6 +1323,70 @@ function BuilderContent() {
   };
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) || null;
+
+  // ── Insert Node Between (connection "+" button) ──────────────────────────────
+  const handleInsertNodeBetween = useCallback(
+    (metadata: NodeMetadata) => {
+      if (!insertBetweenEdge) return;
+      pushToHistory();
+
+      const { sourceId, targetId, sourcePort } = insertBetweenEdge;
+
+      // Create the new node at a position between source and target
+      const sourceNode = nodes.find((n) => n.id === sourceId);
+      const targetNode = nodes.find((n) => n.id === targetId);
+      const x = sourceNode && targetNode ? (sourceNode.position.x + targetNode.position.x) / 2 : 400;
+      const y = sourceNode && targetNode ? (sourceNode.position.y + targetNode.position.y) / 2 + 85 : 300;
+
+      const newNode: WorkflowNode = {
+        id: generateNodeId(),
+        type: metadata.type,
+        category: metadata.category,
+        label: metadata.label,
+        config: { ...metadata.defaultConfig },
+        position: { x, y },
+      };
+
+      // Remove old edge, add new node + two new edges
+      setNodes((prev) => [...prev, newNode]);
+      setEdges((prev) => {
+        const filtered = prev.filter((e) => !(e.sourceId === sourceId && e.targetId === targetId));
+        return [
+          ...filtered,
+          {
+            id: generateEdgeId(),
+            sourceId,
+            targetId: newNode.id,
+            sourcePort: sourcePort as any,
+            label: sourcePort === "yes" ? "Yes" : sourcePort === "no" ? "No" : undefined,
+          },
+          {
+            id: generateEdgeId(),
+            sourceId: newNode.id,
+            targetId,
+            sourcePort: "default",
+          },
+        ];
+      });
+
+      setSelectedNodeId(newNode.id);
+      setInsertBetweenEdge(null);
+      setShowNodeCreator(false);
+    },
+    [insertBetweenEdge, nodes, pushToHistory]
+  );
+
+  // ── Node Creator handler (dispatches to add or insert) ──────────────────────
+  const handleNodeCreatorSelect = useCallback(
+    (metadata: NodeMetadata) => {
+      if (insertBetweenEdge) {
+        handleInsertNodeBetween(metadata);
+      } else {
+        handleAddNode(metadata);
+      }
+    },
+    [insertBetweenEdge, handleInsertNodeBetween, handleAddNode]
+  );
 
   if (loading) {
     return (
@@ -991,6 +1432,39 @@ function BuilderContent() {
             title={showPalette ? "Hide palette" : "Show palette"}
           >
             {showPalette ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+          </button>
+
+          <div className="h-6 w-px bg-gray-200 dark:bg-[#30363d] flex-shrink-0" />
+
+          {/* Undo/Redo */}
+          <button
+            onClick={handleUndo}
+            disabled={historyInfo.undoCount === 0}
+            className="p-2 rounded-lg text-gray-500 dark:text-[#8b949e] hover:text-gray-700 dark:hover:text-[#e6edf3] hover:bg-gray-100 dark:hover:bg-[#21262d] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleRedo}
+            disabled={historyInfo.redoCount === 0}
+            className="p-2 rounded-lg text-gray-500 dark:text-[#8b949e] hover:text-gray-700 dark:hover:text-[#e6edf3] hover:bg-gray-100 dark:hover:bg-[#21262d] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Redo (Ctrl+Shift+Z)"
+          >
+            <Redo2 className="w-4 h-4" />
+          </button>
+
+          {/* Tidy Up */}
+          <button
+            onClick={() => {
+              pushToHistory();
+              // Dispatch custom event that WorkflowCanvas listens to
+              window.dispatchEvent(new CustomEvent("workflow:tidyup"));
+            }}
+            className="p-2 rounded-lg text-gray-500 dark:text-[#8b949e] hover:text-gray-700 dark:hover:text-[#e6edf3] hover:bg-gray-100 dark:hover:bg-[#21262d] transition-colors"
+            title="Tidy Up Nodes"
+          >
+            <AlignCenter className="w-4 h-4" />
           </button>
 
           <div className="h-6 w-px bg-gray-200 dark:bg-[#30363d] flex-shrink-0" />
@@ -1042,6 +1516,51 @@ function BuilderContent() {
             title="Export Workflow JSON"
           >
             <Download className="w-4 h-4" />
+          </button>
+
+          <div className="h-6 w-px bg-gray-200 dark:bg-[#30363d]" />
+
+          {/* Settings */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="p-2 rounded-lg text-gray-500 dark:text-[#8b949e] hover:text-gray-700 dark:hover:text-[#e6edf3] hover:bg-gray-100 dark:hover:bg-[#21262d] transition-colors"
+            title="Workflow Settings"
+          >
+            <Settings2 className="w-4 h-4" />
+          </button>
+
+          {/* Credentials */}
+          <button
+            onClick={() => setShowCredentialsModal(true)}
+            className="p-2 rounded-lg text-gray-500 dark:text-[#8b949e] hover:text-gray-700 dark:hover:text-[#e6edf3] hover:bg-gray-100 dark:hover:bg-[#21262d] transition-colors"
+            title="Manage Credentials"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </button>
+
+          {/* Version History */}
+          <button
+            onClick={async () => {
+              if (editId) {
+                try {
+                  const res = await fetch(`/api/workflow/versions?workflowId=${editId}`);
+                  const data = await res.json();
+                  setVersions(data.versions || []);
+                } catch {}
+              }
+              setShowVersionHistory(!showVersionHistory);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+              showVersionHistory
+                ? "bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20"
+                : "bg-white dark:bg-[#21262d] text-gray-700 dark:text-[#c9d1d9] border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#30363d]"
+            }`}
+            title="Version History"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Versions</span>
           </button>
 
           <div className="h-6 w-px bg-gray-200 dark:bg-[#30363d]" />
@@ -1121,25 +1640,54 @@ function BuilderContent() {
       </div>
 
       {/* Description bar */}
-      <div className="border-b border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] px-4 py-1.5 flex-shrink-0">
+      <div className="border-b border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] px-4 py-1.5 flex-shrink-0 flex items-center gap-3">
         <input
           type="text"
           value={workflowDescription}
           onChange={(e) => setWorkflowDescription(e.target.value)}
-          className="text-xs text-gray-500 dark:text-[#8b949e] bg-transparent border-none outline-none focus:ring-0 w-full placeholder-gray-400 dark:placeholder-[#484f58]"
+          className="text-xs text-gray-500 dark:text-[#8b949e] bg-transparent border-none outline-none focus:ring-0 flex-1 placeholder-gray-400 dark:placeholder-[#484f58]"
           placeholder="Add a description for this workflow..."
         />
+        {/* Tags */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {workflowTags.map((tag, i) => (
+            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20">
+              {tag}
+              <button onClick={() => setWorkflowTags((prev) => prev.filter((_, idx) => idx !== i))} className="hover:text-indigo-800 dark:hover:text-indigo-200">
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
+                e.preventDefault();
+                const val = (e.target as HTMLInputElement).value.trim();
+                if (!workflowTags.includes(val)) {
+                  setWorkflowTags((prev) => [...prev, val]);
+                }
+                (e.target as HTMLInputElement).value = "";
+              }
+            }}
+            className="w-20 px-2 py-0.5 text-[10px] rounded-full border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-gray-600 dark:text-[#c9d1d9] focus:outline-none focus:ring-1 focus:ring-indigo-500/30 placeholder-gray-400 dark:placeholder-[#484f58]"
+            placeholder="+ Add tag"
+          />
+        </div>
       </div>
 
       {/* Main content area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left palette */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left palette — fixed width, doesn't push canvas */}
         {showPalette && (
-          <WorkflowNodePalette onAddNode={handleAddNode} />
+          <div className="flex-shrink-0" style={{ width: '288px', zIndex: 5 }}>
+            <WorkflowNodePalette onAddNode={handleAddNode} />
+          </div>
         )}
 
-        {/* Canvas */}
-        <WorkflowCanvas
+        {/* Canvas — takes remaining space */}
+        <div className="flex-1 min-w-0">
+          <WorkflowCanvas
           nodes={nodes}
           edges={edges}
           selectedNodeId={selectedNodeId}
@@ -1149,11 +1697,14 @@ function BuilderContent() {
           onAddEdge={handleAddEdge}
           onDeleteEdge={handleDeleteEdge}
           nodeExecutionStatuses={nodeExecutionStatuses}
+          nodeExecutionTimes={nodeExecutionTimes}
           nodeValidations={nodeValidations}
           onAddNode={handleAddNode}
+          onInsertBetween={setInsertBetweenEdge}
         />
+        </div>
 
-        {/* Right panel: config or executions */}
+        {/* Right panel: config or executions — fixed overlay when node selected */}
         {selectedNode && (
           <WorkflowNodeConfigPanel
             node={selectedNode}
@@ -1266,6 +1817,31 @@ function BuilderContent() {
         )}
       </div>
 
+      {/* Node Creator Panel (n8n-style right slide-out, N key or insert-between) */}
+      {(showNodeCreator || insertBetweenEdge) && (
+        <>
+          {/* Backdrop */}
+          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => { setShowNodeCreator(false); setInsertBetweenEdge(null); }} />
+          {/* Right slide-out panel */}
+          <div className="fixed right-0 top-0 bottom-0 z-50 w-72 bg-white dark:bg-[#161b22] border-l border-gray-200 dark:border-[#30363d] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+            <div className="px-3 py-2.5 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between flex-shrink-0">
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-[#e6edf3]">
+                {insertBetweenEdge ? "Insert Node Between" : "Add Node (N)"}
+              </h3>
+              <button onClick={() => { setShowNodeCreator(false); setInsertBetweenEdge(null); }} className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-[#e6edf3] hover:bg-gray-100 dark:hover:bg-[#21262d]">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <WorkflowNodePalette
+                onAddNode={handleNodeCreatorSelect}
+                isCollapsed={false}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
       {/* AI Generate Modal */}
       {showAiModal && (
         <Suspense fallback={null}>
@@ -1276,6 +1852,78 @@ function BuilderContent() {
           />
         </Suspense>
       )}
+
+      {/* Version History Panel */}
+      {showVersionHistory && (
+        <div className="fixed right-0 top-14 bottom-0 z-40 w-80 bg-white dark:bg-[#161b22] border-l border-gray-200 dark:border-[#30363d] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="px-3 py-2.5 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-amber-500" />
+              <h3 className="text-xs font-semibold text-gray-900 dark:text-[#e6edf3]">Version History</h3>
+              <span className="text-[9px] bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded font-bold">{versions.length}</span>
+            </div>
+            <button onClick={() => setShowVersionHistory(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-[#e6edf3] hover:bg-gray-100 dark:hover:bg-[#21262d]">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {versions.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center p-4 text-center">
+                <History className="w-8 h-8 text-gray-300 dark:text-[#30363d] mb-2" />
+                <p className="text-xs font-medium text-gray-500 dark:text-[#8b949e]">No versions yet</p>
+                <p className="text-[10px] text-gray-400 dark:text-[#6e7681] mt-1">Versions are auto-saved on each save.</p>
+              </div>
+            ) : (
+              versions.map((ver) => (
+                <div
+                  key={ver.id}
+                  className="p-3 rounded-xl border border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-900 dark:text-[#e6edf3]">v{ver.versionNumber}</span>
+                    <span className="text-[9px] text-gray-400 dark:text-[#6e7681]">
+                      {new Date(ver.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {ver.label && (
+                    <p className="text-[10px] text-gray-500 dark:text-[#8b949e] mt-1">{ver.label}</p>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (ver.snapshot) {
+                        if (ver.snapshot.name) setWorkflowName(ver.snapshot.name);
+                        if (ver.snapshot.description) setWorkflowDescription(ver.snapshot.description);
+                        if (ver.snapshot.nodes) setNodes(ver.snapshot.nodes);
+                        if (ver.snapshot.edges) setEdges(ver.snapshot.edges);
+                        setShowVersionHistory(false);
+                      }
+                    }}
+                    className="mt-2 text-[10px] font-medium text-[#2f81f7] hover:text-[#2672d9] transition-colors"
+                  >
+                    Restore this version
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Credential Modal */}
+      <CredentialModal
+        isOpen={showCredentialsModal}
+        onClose={() => setShowCredentialsModal(false)}
+        nodeType={selectedNode?.type}
+      />
+
+      {/* Workflow Settings Modal */}
+      <WorkflowSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        settings={workflowSettings}
+        onSave={setWorkflowSettings}
+        workflowId={editId || undefined}
+      />
 
       {/* JSON Import/Export Modal */}
       {showJsonModal && (

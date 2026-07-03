@@ -1396,6 +1396,5 @@ export default function BulkDialer() {
                 )}
             </div>
         </div>
-        </div>
     );
 }

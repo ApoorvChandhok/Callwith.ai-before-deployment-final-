@@ -1,0 +1,806 @@
+/**
+ * n8n Theme — EXACT values from n8n source code
+ *
+ * Extracted from:
+ * - packages/frontend/@n8n/design-system/src/css/_primitives.scss
+ * - packages/frontend/@n8n/design-system/src/css/_tokens.scss
+ * - packages/frontend/@n8n/design-system/src/css/_tokens.legacy.scss
+ * - packages/frontend/editor-ui/src/app/css/_variables.scss
+ */
+
+/* ── n8n Color Palette (oklch-based) ───────────────────────────────────────── */
+
+:root {
+  /* Orange (Primary) */
+  --n8n-primary: #ff6d5a;
+  --n8n-primary-light: #ff8a75;
+  --n8n-primary-dark: #e55a48;
+  --n8n-primary-bg: rgba(255, 109, 90, 0.08);
+
+  /* Background */
+  --n8n-bg: #ffffff;
+  --n8n-bg-light: #f5f5f5;
+  --n8n-bg-dark: #1a1a2e;
+  --n8n-bg-canvas: #f5f5f5;
+  --n8n-bg-panel: #ffffff;
+  --n8n-bg-node: #ffffff;
+
+  /* Text */
+  --n8n-text: #1a1a2e;
+  --n8n-text-light: #6e6e8a;
+  --n8n-text-muted: #9b9bb5;
+  --n8n-text-dark: #000000;
+
+  /* Borders */
+  --n8n-border: #e0e0e6;
+  --n8n-border-light: #f0f0f5;
+  --n8n-border-dark: #c0c0cc;
+
+  /* Status */
+  --n8n-success: #2ebd6b;
+  --n8n-success-bg: rgba(46, 189, 107, 0.08);
+  --n8n-warning: #f5a623;
+  --n8n-warning-bg: rgba(245, 166, 35, 0.08);
+  --n8n-danger: #e54d4d;
+  --n8n-danger-bg: rgba(229, 77, 77, 0.08);
+  --n8n-info: #3b82f6;
+  --n8n-info-bg: rgba(59, 130, 246, 0.08);
+
+  /* Node Colors */
+  --n8n-node-trigger: #ff6d5a;
+  --n8n-node-action: #3b82f6;
+  --n8n-node-condition: #f5a623;
+  --n8n-node-flow: #8b5cf6;
+  --n8n-node-utility: #6e6e8a;
+
+  /* Canvas */
+  --n8n-canvas-bg: #f5f5f5;
+  --n8n-canvas-dot: #d0d0d8;
+  --n8n-canvas-selected: rgba(0, 0, 0, 0.06);
+
+  /* Node */
+  --n8n-node-bg: #ffffff;
+  --n8n-node-border: rgba(0, 0, 0, 0.1);
+  --n8n-node-border-hover: rgba(0, 0, 0, 0.2);
+  --n8n-node-border-selected: #ff6d5a;
+  --n8n-node-border-pinned: #8b5cf6;
+  --n8n-node-border-running: #ff6d5a;
+
+  /* NDV */
+  --n8n-ndv-bg: #ffffff;
+  --n8n-ndv-header-bg: #ffffff;
+  --n8n-ndv-run-data-bg: #f0f0f5;
+
+  /* Spacing (from _primitives.scss) */
+  --n8n-space-5xs: 2px;
+  --n8n-space-4xs: 4px;
+  --n8n-space-3xs: 6px;
+  --n8n-space-2xs: 8px;
+  --n8n-space-xs: 12px;
+  --n8n-space-sm: 16px;
+  --n8n-space-md: 20px;
+  --n8n-space-lg: 24px;
+  --n8n-space-xl: 32px;
+  --n8n-space-2xl: 48px;
+
+  /* Typography */
+  --n8n-font: 'InterVariable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --n8n-font-mono: 'CommitMono', ui-monospace, Menlo, Consolas, monospace;
+
+  /* Font Sizes */
+  --n8n-font-size-4xs: 8px;
+  --n8n-font-size-3xs: 10px;
+  --n8n-font-size-2xs: 12px;
+  --n8n-font-size-xs: 13px;
+  --n8n-font-size-sm: 14px;
+  --n8n-font-size-md: 16px;
+  --n8n-font-size-lg: 18px;
+  --n8n-font-size-xl: 20px;
+
+  /* Font Weights */
+  --n8n-font-weight-regular: 400;
+  --n8n-font-weight-medium: 500;
+  --n8n-font-weight-bold: 600;
+
+  /* Line Heights */
+  --n8n-line-height-xs: 1;
+  --n8n-line-height-sm: 1.25;
+  --n8n-line-height-md: 1.3;
+  --n8n-line-height-lg: 1.35;
+  --n8n-line-height-xl: 1.5;
+
+  /* Border Radius */
+  --n8n-radius-4xs: 2px;
+  --n8n-radius-3xs: 4px;
+  --n8n-radius-2xs: 6px;
+  --n8n-radius-xs: 8px;
+  --n8n-radius-sm: 12px;
+  --n8n-radius-md: 16px;
+  --n8n-radius-lg: 20px;
+  --n8n-radius-xl: 24px;
+  --n8n-radius-full: 9999px;
+
+  /* Shadows */
+  --n8n-shadow-sm: 0 1px 3px -1px rgba(0, 0, 0, 0.1);
+  --n8n-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --n8n-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --n8n-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+  /* Transitions */
+  --n8n-transition-snappy: 200ms ease;
+  --n8n-transition-base: 400ms ease;
+  --n8n-transition-slow: 1000ms ease;
+
+  /* Z-index */
+  --n8n-z-sidebar: 100;
+  --n8n-z-toolbar: 200;
+  --n8n-z-panel: 300;
+  --n8n-z-modal: 400;
+  --n8n-z-toast: 500;
+
+  /* Node Creator */
+  --n8n-node-creator-width: 385px;
+}
+
+/* ── Dark Mode ──────────────────────────────────────────────────────────────── */
+
+.dark {
+  --n8n-bg: #1a1a2e;
+  --n8n-bg-light: #16162a;
+  --n8n-bg-dark: #0d0d1a;
+  --n8n-bg-canvas: #121222;
+  --n8n-bg-panel: #1e1e36;
+  --n8n-bg-node: #1e1e36;
+
+  --n8n-text: #e0e0e6;
+  --n8n-text-light: #9b9bb5;
+  --n8n-text-muted: #6e6e8a;
+  --n8n-text-dark: #ffffff;
+
+  --n8n-border: #2a2a40;
+  --n8n-border-light: #222238;
+  --n8n-border-dark: #3a3a54;
+
+  --n8n-canvas-bg: #121222;
+  --n8n-canvas-dot: #2a2a40;
+  --n8n-canvas-selected: rgba(255, 255, 255, 0.1);
+
+  --n8n-node-bg: #1e1e36;
+  --n8n-node-border: rgba(255, 255, 255, 0.15);
+  --n8n-node-border-hover: rgba(255, 255, 255, 0.25);
+
+  --n8n-ndv-bg: #1e1e36;
+  --n8n-ndv-header-bg: #16162a;
+  --n8n-ndv-run-data-bg: #121222;
+}
+
+/* ── Base Styles ────────────────────────────────────────────────────────────── */
+
+body {
+  font-family: var(--n8n-font);
+  color: var(--n8n-text);
+  background: var(--n8n-bg);
+  line-height: var(--n8n-line-height-md);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── n8n Node Card (CanvasNodeDefault.vue) ──────────────────────────────────── */
+
+.n8n-node-card {
+  width: 240px;
+  background: var(--n8n-node-bg);
+  border: 1.5px solid var(--n8n-node-border);
+  border-radius: var(--n8n-radius-xs);
+  box-shadow: var(--n8n-shadow-sm);
+  transition: all var(--n8n-transition-snappy);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.n8n-node-card:hover {
+  border-color: var(--n8n-node-border-hover);
+  box-shadow: var(--n8n-shadow-md);
+}
+
+.n8n-node-card.selected {
+  border-color: var(--n8n-node-border-selected);
+  box-shadow: 0 0 0 6px var(--n8n-primary-bg), var(--n8n-shadow-md);
+}
+
+.n8n-node-card.running {
+  border-color: transparent;
+  background: var(--n8n-node-bg);
+}
+
+.n8n-node-card.running::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(from 0deg, transparent 0%, var(--n8n-primary) 100%);
+  animation: n8n-spin 1.5s linear infinite;
+  z-index: -1;
+}
+
+@keyframes n8n-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.n8n-node-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--n8n-space-2xs);
+  padding: var(--n8n-space-2xs) var(--n8n-space-xs);
+}
+
+.n8n-node-card-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--n8n-radius-3xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.n8n-node-card-name {
+  font-size: var(--n8n-font-size-md);
+  font-weight: var(--n8n-font-weight-medium);
+  color: var(--n8n-text);
+  line-height: var(--n8n-line-height-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  max-lines: 2;
+}
+
+.n8n-node-card-type {
+  font-size: var(--n8n-font-size-xs);
+  color: var(--n8n-text-muted);
+  text-transform: capitalize;
+}
+
+.n8n-node-card-body {
+  padding: var(--n8n-space-2xs) var(--n8n-space-xs);
+}
+
+.n8n-node-card-summary {
+  font-size: var(--n8n-font-size-xs);
+  color: var(--n8n-text-light);
+  font-family: var(--n8n-font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── n8n Handles (CanvasHandleDot.vue) ──────────────────────────────────────── */
+
+.n8n-handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--n8n-bg);
+  border: 1px solid var(--n8n-border-dark);
+  cursor: crosshair;
+  transition: all var(--n8n-transition-snappy);
+  padding: 4px;
+  margin: -4px;
+}
+
+.n8n-handle:hover {
+  transform: scale(1.5);
+  border-color: var(--n8n-border-dark);
+  background: var(--n8n-bg-light);
+}
+
+.n8n-handle.source {
+  background: var(--n8n-bg);
+  border-color: var(--n8n-border-dark);
+}
+
+.n8n-handle.target {
+  background: var(--n8n-bg);
+  border-color: var(--n8n-border-dark);
+}
+
+.n8n-handle.yes {
+  border-color: var(--n8n-success);
+}
+
+.n8n-handle.no {
+  border-color: var(--n8n-danger);
+}
+
+.n8n-handle.loop {
+  border-color: var(--n8n-flow);
+}
+
+.n8n-handle.done {
+  border-color: var(--n8n-text-muted);
+}
+
+.n8n-handle.error {
+  border-color: var(--n8n-danger);
+}
+
+/* ── n8n Edges (CanvasEdge.vue) ─────────────────────────────────────────────── */
+
+.n8n-edge {
+  stroke: var(--n8n-border-dark);
+  stroke-width: 2;
+  fill: none;
+  transition: stroke var(--n8n-transition-snappy);
+}
+
+.n8n-edge:hover {
+  stroke: var(--n8n-primary);
+  stroke-width: 3;
+}
+
+.n8n-edge.yes { stroke: var(--n8n-success); }
+.n8n-edge.no { stroke: var(--n8n-danger); }
+.n8n-edge.loop { stroke: var(--n8n-flow); }
+.n8n-edge.done { stroke: var(--n8n-text-muted); }
+.n8n-edge.error { stroke: var(--n8n-danger); stroke-dasharray: 5 6; }
+
+/* ── n8n Panel (NDV) ────────────────────────────────────────────────────────── */
+
+.n8n-panel {
+  background: var(--n8n-ndv-bg);
+  border-left: 1px solid var(--n8n-border);
+  box-shadow: var(--n8n-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.n8n-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--n8n-space-4xs) var(--n8n-space-sm);
+  border-bottom: 1px solid var(--n8n-border);
+  background: var(--n8n-ndv-header-bg);
+  flex-shrink: 0;
+  gap: var(--n8n-space-2xs);
+}
+
+.n8n-panel-header-title {
+  font-size: var(--n8n-font-size-lg);
+  font-weight: var(--n8n-font-weight-bold);
+  color: var(--n8n-text);
+  line-height: var(--n8n-line-height-sm);
+}
+
+.n8n-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--n8n-space-sm);
+}
+
+/* ── n8n Toolbar ────────────────────────────────────────────────────────────── */
+
+.n8n-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--n8n-space-2xs) var(--n8n-space-xs);
+  background: var(--n8n-bg);
+  border-bottom: 1px solid var(--n8n-border);
+  flex-shrink: 0;
+  height: 48px;
+}
+
+.n8n-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--n8n-space-4xs);
+}
+
+.n8n-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--n8n-radius-3xs);
+  border: none;
+  background: transparent;
+  color: var(--n8n-text-light);
+  cursor: pointer;
+  transition: all var(--n8n-transition-snappy);
+}
+
+.n8n-toolbar-btn:hover {
+  background: var(--n8n-bg-light);
+  color: var(--n8n-text);
+}
+
+.n8n-toolbar-btn.active {
+  background: var(--n8n-primary-bg);
+  color: var(--n8n-primary);
+}
+
+/* ── n8n Button ─────────────────────────────────────────────────────────────── */
+
+.n8n-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n8n-space-4xs);
+  padding: var(--n8n-space-3xs) var(--n8n-space-xs);
+  border-radius: var(--n8n-radius-full);
+  border: 1px solid var(--n8n-border);
+  background: var(--n8n-bg);
+  color: var(--n8n-text);
+  font-size: var(--n8n-font-size-2xs);
+  font-weight: var(--n8n-font-weight-medium);
+  cursor: pointer;
+  transition: all var(--n8n-transition-snappy);
+  white-space: nowrap;
+  height: 36px;
+}
+
+.n8n-btn:hover {
+  border-color: var(--n8n-border-dark);
+  background: var(--n8n-bg-light);
+}
+
+.n8n-btn-primary {
+  background: var(--n8n-primary);
+  border-color: var(--n8n-primary);
+  color: #ffffff;
+}
+
+.n8n-btn-primary:hover {
+  background: var(--n8n-primary-dark);
+}
+
+/* ── n8n Input ──────────────────────────────────────────────────────────────── */
+
+.n8n-input {
+  width: 100%;
+  padding: var(--n8n-space-2xs) var(--n8n-space-xs);
+  border: 1px solid var(--n8n-border);
+  border-radius: var(--n8n-radius-3xs);
+  background: var(--n8n-bg);
+  color: var(--n8n-text);
+  font-size: var(--n8n-font-size-sm);
+  font-family: var(--n8n-font);
+  outline: none;
+  transition: border-color var(--n8n-transition-snappy);
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.n8n-input:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+.n8n-input::placeholder {
+  color: var(--n8n-text-muted);
+}
+
+/* ── n8n Select ─────────────────────────────────────────────────────────────── */
+
+.n8n-select {
+  width: 100%;
+  padding: var(--n8n-space-2xs) var(--n8n-space-xs);
+  border: 1px solid var(--n8n-border);
+  border-radius: var(--n8n-radius-3xs);
+  background: var(--n8n-bg);
+  color: var(--n8n-text);
+  font-size: var(--n8n-font-size-sm);
+  outline: none;
+  cursor: pointer;
+  height: 40px;
+}
+
+.n8n-select:focus {
+  border-color: #8b5cf6;
+}
+
+/* ── n8n Textarea ───────────────────────────────────────────────────────────── */
+
+.n8n-textarea {
+  width: 100%;
+  padding: var(--n8n-space-2xs) var(--n8n-space-xs);
+  border: 1px solid var(--n8n-border);
+  border-radius: var(--n8n-radius-3xs);
+  background: var(--n8n-bg);
+  color: var(--n8n-text);
+  font-size: var(--n8n-font-size-sm);
+  font-family: var(--n8n-font);
+  outline: none;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.n8n-textarea:focus {
+  border-color: #8b5cf6;
+}
+
+/* ── n8n Toggle ─────────────────────────────────────────────────────────────── */
+
+.n8n-toggle {
+  width: 40px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--n8n-text-muted);
+  position: relative;
+  cursor: pointer;
+  transition: background var(--n8n-transition-snappy);
+}
+
+.n8n-toggle.active {
+  background: var(--n8n-success);
+}
+
+.n8n-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: var(--n8n-shadow-sm);
+  transition: transform var(--n8n-transition-snappy);
+}
+
+.n8n-toggle.active::after {
+  transform: translateX(20px);
+}
+
+/* ── n8n Badge ──────────────────────────────────────────────────────────────── */
+
+.n8n-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--n8n-radius-3xs);
+  font-size: var(--n8n-font-size-2xs);
+  font-weight: var(--n8n-font-weight-medium);
+}
+
+.n8n-badge-success {
+  background: var(--n8n-success-bg);
+  color: var(--n8n-success);
+}
+
+.n8n-badge-warning {
+  background: var(--n8n-warning-bg);
+  color: var(--n8n-warning);
+}
+
+.n8n-badge-danger {
+  background: var(--n8n-danger-bg);
+  color: var(--n8n-danger);
+}
+
+/* ── n8n Canvas Grid ────────────────────────────────────────────────────────── */
+
+.n8n-canvas-grid {
+  background-color: var(--n8n-canvas-bg);
+  background-image: radial-gradient(circle, var(--n8n-canvas-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ── n8n Palette ────────────────────────────────────────────────────────────── */
+
+.n8n-palette {
+  width: var(--n8n-node-creator-width);
+  background: var(--n8n-bg-panel);
+  border-left: 1px solid var(--n8n-border);
+  overflow-y: auto;
+  position: fixed;
+  top: 48px;
+  right: 0;
+  bottom: 0;
+  z-index: var(--n8n-z-panel);
+}
+
+.n8n-palette-header {
+  font-size: var(--n8n-font-size-lg);
+  font-weight: var(--n8n-font-weight-bold);
+  line-height: var(--n8n-line-height-sm);
+  padding: var(--n8n-space-sm);
+}
+
+.n8n-palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--n8n-space-2xs);
+  padding: var(--n8n-space-2xs) var(--n8n-space-sm);
+  margin: 0 var(--n8n-space-sm);
+  cursor: pointer;
+  transition: background var(--n8n-transition-snappy);
+  border-radius: var(--n8n-radius-3xs);
+}
+
+.n8n-palette-item:hover {
+  background: var(--n8n-bg-light);
+}
+
+.n8n-palette-item.active {
+  background: var(--n8n-primary-bg);
+}
+
+/* ── n8n Section ────────────────────────────────────────────────────────────── */
+
+.n8n-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--n8n-space-2xs) var(--n8n-space-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.n8n-section-header:hover {
+  background: var(--n8n-bg-light);
+}
+
+/* ── n8n Expression ─────────────────────────────────────────────────────────── */
+
+.n8n-expression {
+  font-family: var(--n8n-font-mono);
+  color: var(--n8n-primary);
+  background: var(--n8n-primary-bg);
+  padding: 1px 4px;
+  border-radius: var(--n8n-radius-3xs);
+}
+
+/* ── n8n Status Dot ─────────────────────────────────────────────────────────── */
+
+.n8n-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.n8n-status-dot.success { background: var(--n8n-success); }
+.n8n-status-dot.error { background: var(--n8n-danger); }
+.n8n-status-dot.running { background: var(--n8n-warning); animation: pulse 1.5s infinite; }
+.n8n-status-dot.idle { background: var(--n8n-text-muted); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── n8n Scrollbar ──────────────────────────────────────────────────────────── */
+
+.n8n-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.n8n-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.n8n-scroll::-webkit-scrollbar-thumb {
+  background: var(--n8n-text-muted);
+  border-radius: 3px;
+}
+
+.n8n-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--n8n-text-light);
+}
+
+/* ── n8n Tabs ───────────────────────────────────────────────────────────────── */
+
+.n8n-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--n8n-border);
+}
+
+.n8n-tab {
+  padding: var(--n8n-space-2xs) var(--n8n-space-sm);
+  font-size: var(--n8n-font-size-sm);
+  font-weight: var(--n8n-font-weight-medium);
+  color: var(--n8n-text-light);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--n8n-transition-snappy);
+}
+
+.n8n-tab:hover {
+  color: var(--n8n-text);
+}
+
+.n8n-tab.active {
+  color: var(--n8n-primary);
+  border-bottom-color: var(--n8n-primary);
+}
+
+/* ── n8n Tooltip ────────────────────────────────────────────────────────────── */
+
+.n8n-tooltip {
+  position: absolute;
+  padding: var(--n8n-space-4xs) var(--n8n-space-3xs);
+  background: var(--n8n-text);
+  color: var(--n8n-bg);
+  font-size: var(--n8n-font-size-2xs);
+  border-radius: var(--n8n-radius-3xs);
+  box-shadow: var(--n8n-shadow-md);
+  pointer-events: none;
+  z-index: var(--n8n-z-toast);
+  white-space: nowrap;
+}
+
+/* ── n8n Execution Status ───────────────────────────────────────────────────── */
+
+.n8n-execution-running {
+  border-color: var(--n8n-node-border-running) !important;
+  box-shadow: 0 0 0 6px var(--n8n-primary-bg), var(--n8n-shadow-md) !important;
+}
+
+.n8n-execution-success {
+  border-color: var(--n8n-success) !important;
+  box-shadow: 0 0 0 6px var(--n8n-success-bg), var(--n8n-shadow-md) !important;
+}
+
+.n8n-execution-error {
+  border-color: var(--n8n-danger) !important;
+  box-shadow: 0 0 0 6px var(--n8n-danger-bg), var(--n8n-shadow-md) !important;
+}
+
+/* ── n8n Dialog ─────────────────────────────────────────────────────────────── */
+
+.n8n-dialog {
+  background: var(--n8n-bg);
+  border-radius: var(--n8n-radius-lg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  padding: var(--n8n-space-lg);
+  font-size: var(--n8n-font-size-sm);
+}
+
+.n8n-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.8);
+  z-index: var(--n8n-z-modal);
+}
+
+.dark .n8n-dialog-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* ── n8n Tags ───────────────────────────────────────────────────────────────── */
+
+.n8n-tag {
+  height: 20px;
+  padding: 0 var(--n8n-space-4xs);
+  background: var(--n8n-bg-light);
+  border: 1px solid var(--n8n-border-light);
+  border-radius: var(--n8n-radius-3xs);
+  font-size: var(--n8n-font-size-2xs);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n8n-space-4xs);
+  cursor: pointer;
+  transition: all var(--n8n-transition-snappy);
+}
+
+.n8n-tag:hover {
+  background: var(--n8n-bg);
+  border-color: var(--n8n-border);
+}
+
+/* ── n8n Focus ──────────────────────────────────────────────────────────────── */
+
+.n8n-focus:focus-visible {
+  outline: 3px solid rgba(139, 92, 246, 0.3);
+  outline-offset: 1px;
+}
+
+/* ── n8n Transition ─────────────────────────────────────────────────────────── */
+
+.n8n-transition {
+  transition: all var(--n8n-transition-snappy);
+}

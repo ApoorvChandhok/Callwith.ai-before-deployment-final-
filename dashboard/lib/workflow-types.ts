@@ -54,11 +54,94 @@ export type ActionType =
   | "airtable_row"
   | "notion_page"
   | "send_instagram_dm"
-  | "read_csv_leads";
+  | "read_csv_leads"
+  // n8n-style data transformation nodes
+  | "set_fields"
+  | "aggregate"
+  | "remove_duplicates"
+  | "summarize"
+  | "extract_from_file"
+  | "convert_file"
+  | "date_time"
+  | "edit_fields"
+  | "no_operation"
+  | "stop_error"
+  | "respond_webhook"
+  | "split_in_batches";
 
 export interface ReadCsvLeadsConfig {
   filePath: string;
   limit?: number;
+}
+
+// ── n8n-Style Data Transformation Configs ─────────────────────────────────────
+
+export interface SetFieldsConfig {
+  mode: "manual" | "expression";
+  fields: Array<{ name: string; value: string }>;
+}
+
+export interface AggregateConfig {
+  mode: "append" | "group_by" | "summarize";
+  groupByField?: string;
+  aggregateField?: string;
+  aggregateFunction?: "count" | "sum" | "avg" | "min" | "max" | "join";
+}
+
+export interface RemoveDuplicatesConfig {
+  keyField: string;
+  compareMode: "exact" | "case_insensitive";
+}
+
+export interface SummarizeConfig {
+  prompt: string;
+  model?: string;
+  maxTokens?: number;
+}
+
+export interface ExtractFromFileConfig {
+  fileType: "csv" | "json" | "pdf" | "html" | "text";
+  jsonPath?: string;
+  csvDelimiter?: string;
+}
+
+export interface ConvertFileConfig {
+  fromFormat: "json" | "csv" | "xml" | "html" | "text";
+  toFormat: "json" | "csv" | "xml" | "html" | "text";
+  options?: Record<string, any>;
+}
+
+export interface DateTimeConfig {
+  operation: "format" | "parse" | "calculate" | "extract";
+  inputField?: string;
+  format?: string;
+  addition?: number;
+  additionUnit?: "seconds" | "minutes" | "hours" | "days" | "weeks" | "months";
+}
+
+export interface EditFieldsConfig {
+  fields: Array<{ name: string; value: string; action: "set" | "remove" | "rename" }>;
+}
+
+export interface NoOperationConfig {
+  // No-op — does nothing
+}
+
+export interface StopErrorConfig {
+  errorMessage: string;
+  errorType?: "nodeOperation" | "custom";
+}
+
+export interface RespondWebhookConfig {
+  responseCode: number;
+  responseHeaders?: Record<string, string>;
+  responseBody?: string;
+  responseContentType?: string;
+}
+
+export interface SplitInBatchesConfig {
+  batchSize: number;
+  batchMode?: "fixed" | "dynamic";
 }
 
 export interface GmailConfig {
@@ -320,7 +403,19 @@ export type NodeConfig =
   | FilterByTagConfig
   | CheckLeadFieldConfig
   | CheckCallCountConfig
-  | CheckSentimentConfig;
+  | CheckSentimentConfig
+  | SetFieldsConfig
+  | AggregateConfig
+  | RemoveDuplicatesConfig
+  | SummarizeConfig
+  | ExtractFromFileConfig
+  | ConvertFileConfig
+  | DateTimeConfig
+  | EditFieldsConfig
+  | NoOperationConfig
+  | StopErrorConfig
+  | RespondWebhookConfig
+  | SplitInBatchesConfig;
 
 // ── Node Types ───────────────────────────────────────────────────────────────
 
@@ -853,6 +948,139 @@ return items.map(item => ({
     defaultConfig: { content: "Add your note here...", color: "yellow", width: 200, height: 120 },
     paletteGroup: "Utilities",
   },
+  // ── n8n-Style Data Transformation Nodes ──────────────────────────────────────
+  {
+    type: "set_fields",
+    category: "action",
+    label: "Edit Fields (Set)",
+    description: "Set or edit specific fields on items",
+    icon: "Edit2",
+    color: "#2f81f7",
+    defaultConfig: { mode: "manual", fields: [{ name: "", value: "" }] },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "aggregate",
+    category: "action",
+    label: "Aggregate Items",
+    description: "Combine multiple items into a single item",
+    icon: "Combine",
+    color: "#8b5cf6",
+    defaultConfig: { mode: "append", groupByField: "", aggregateField: "", aggregateFunction: "count" },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "remove_duplicates",
+    category: "action",
+    label: "Remove Duplicates",
+    description: "Remove duplicate items based on a key field",
+    icon: "Copy",
+    color: "#8b5cf6",
+    defaultConfig: { keyField: "", compareMode: "exact" },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "summarize",
+    category: "action",
+    label: "Summarize",
+    description: "Aggregate items with grouping and calculations",
+    icon: "BarChart3",
+    color: "#8b5cf6",
+    defaultConfig: { mode: "group_by", groupByField: "", aggregateField: "", aggregateFunction: "count" },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "extract_from_file",
+    category: "action",
+    label: "Extract from File",
+    description: "Parse and extract data from files (CSV, JSON, PDF, etc.)",
+    icon: "FileUp",
+    color: "#8b5cf6",
+    defaultConfig: { fileType: "json", jsonPath: "", csvDelimiter: "," },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "convert_file",
+    category: "action",
+    label: "Convert to/from File",
+    description: "Convert data between different formats",
+    icon: "RefreshCw",
+    color: "#8b5cf6",
+    defaultConfig: { fromFormat: "json", toFormat: "csv", options: {} },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "date_time",
+    category: "action",
+    label: "Date & Time",
+    description: "Format, parse, or calculate with dates and times",
+    icon: "Clock",
+    color: "#408000",
+    defaultConfig: { operation: "formatDate", inputField: "", format: "yyyy-MM-dd" },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "edit_fields",
+    category: "action",
+    label: "Edit Fields",
+    description: "Set, remove, or rename fields on items",
+    icon: "Pencil",
+    color: "#2f81f7",
+    defaultConfig: { fields: [{ name: "", value: "", action: "set" }] },
+    paletteGroup: "Data",
+    badge: "n8n",
+  },
+  {
+    type: "no_operation",
+    category: "action",
+    label: "No Operation",
+    description: "Pass-through node — does nothing, useful for testing",
+    icon: "Circle",
+    color: "#8b949e",
+    defaultConfig: {},
+    paletteGroup: "Utilities",
+    badge: "n8n",
+  },
+  {
+    type: "stop_error",
+    category: "action",
+    label: "Stop and Error",
+    description: "Halt workflow execution with an error message",
+    icon: "Octagon",
+    color: "#f85149",
+    defaultConfig: { errorMessage: "Workflow stopped", errorType: "errorMessage" },
+    paletteGroup: "Flow",
+    badge: "n8n",
+  },
+  {
+    type: "respond_webhook",
+    category: "action",
+    label: "Respond to Webhook",
+    description: "Send a response back to the webhook caller",
+    icon: "Reply",
+    color: "#e44d8f",
+    defaultConfig: { responseCode: 200, responseHeaders: {}, responseBody: "", responseContentType: "application/json" },
+    paletteGroup: "Core",
+    badge: "n8n",
+  },
+  {
+    type: "split_in_batches",
+    category: "action",
+    label: "Split In Batches",
+    description: "Process items in configurable batch sizes (n8n-style loop)",
+    icon: "Layers",
+    color: "#1a8c3a",
+    defaultConfig: { batchSize: 10 },
+    paletteGroup: "Flow",
+    badge: "n8n",
+  },
 ];
 
 // Legacy alias for backwards compatibility
@@ -925,6 +1153,12 @@ export function buildPaletteSections(filter?: string): PaletteSection[] {
       title: "Productivity",
       accent: "#34a853",
       nodes: allNodes.filter((n) => n.paletteGroup === "Productivity"),
+    },
+    {
+      id: "data",
+      title: "Data Transformation",
+      accent: "#8b5cf6",
+      nodes: allNodes.filter((n) => n.paletteGroup === "Data"),
     },
     {
       id: "core",
