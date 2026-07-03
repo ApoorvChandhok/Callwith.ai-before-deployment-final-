@@ -17,6 +17,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@types/three": "^0.184.1",
     "@untitledui/icons": "^0.0.22",
+    "@xyflow/react": "^12.11.1",
     "ai": "^6.0.191",
     "cobe": "^2.0.1",
     "dotenv": "^17.4.2",

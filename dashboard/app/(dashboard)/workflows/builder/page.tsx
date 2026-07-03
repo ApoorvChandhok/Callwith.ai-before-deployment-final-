@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Save, Play, Pause, PanelLeftClose, PanelLeft, History,
   Trash2, Loader2, Sparkles, X, Download, Upload, Settings2, CheckCircle2,
+  Undo2, Redo2,
 } from "lucide-react";
 import type { WorkflowNode, WorkflowEdge, NodeMetadata } from "@/lib/workflow-types";
 import { getWorkflow, createWorkflow, updateWorkflow } from "@/lib/workflow-actions";
 import { resolveConfigTemplates, evaluateSwitchRule, executeCodeNode } from "@/lib/expression-engine";
 import WorkflowCanvas from "@/components/workflows/WorkflowCanvas";
 import WorkflowNodePalette from "@/components/workflows/WorkflowNodePalette";
-import WorkflowNodeConfigPanel from "@/components/workflows/WorkflowNodeConfigPanel";
+import NodeConfigPanel from "@/components/workflows/NodeConfigPanel";
 import { useCopilotContext } from "@/components/copilot/CopilotContext";
 import { validateAllNodes } from "@/lib/workflow-validation";
 
@@ -1114,17 +1115,12 @@ function BuilderContent() {
 
         {/* Right panel: config or executions */}
         {selectedNode && (
-          <WorkflowNodeConfigPanel
+          <NodeConfigPanel
             node={selectedNode}
             onClose={() => setSelectedNodeId(null)}
             onUpdate={handleUpdateNodeConfig}
             executionData={executions[0]?.nodeExecutions?.[selectedNode.id]}
-            nodes={nodes}
-            edges={edges}
-            selectedExecution={selectedExecution}
-            onSelectNode={setSelectedNodeId}
             onTestStep={handleTestStep}
-            nodeOutputMap={panelNodeOutputMap}
             isTestingStep={isTestingStep}
           />
         )}
