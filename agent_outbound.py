@@ -77,9 +77,9 @@ logger.info("[OUTBOUND] Agent initialized")
 
 # Pre-load VAD model at startup — tuned for telephony
 _VAD = silero.VAD.load(
-    min_silence_duration=0.15,    # 150ms silence before VAD declares end-of-speech
-    activation_threshold=0.25,    # Lower = starts transcribing sooner on soft speech
-    min_speech_duration=0.05,     # 50ms minimum to count as speech (filters DTMF/pops)
+    min_silence_duration=0.55,    # 550ms — matches natural phone conversation pauses
+    activation_threshold=0.35,    # Higher threshold to filter telephony line noise/static
+    min_speech_duration=0.25,     # 250ms minimum speech to register (filters DTMF/pops/breaths)
     sample_rate=16000,             # Match Deepgram's ingestion rate — no resampling overhead
 )
 
@@ -110,6 +110,10 @@ def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, v
         model    = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
         voice    = voice_override or ws_config.tts_voice or os.getenv("SARVAM_VOICE", "ishita")
         language = language_override or ws_config.tts_language or os.getenv("SARVAM_LANGUAGE", "en-IN")
+        # Validate voice is compatible with bulbul:v3 — fallback to ishita if not
+        if voice.lower() not in _SARVAM_VOICES:
+            logger.warning(f"[TTS] Voice '{voice}' not compatible with bulbul:v3 — falling back to 'ishita'")
+            voice = "ishita"
         logger.info(f"[TTS] Sarvam -- model={model}, speaker={voice}, lang={language}")
         # Note: Sarvam bulbul:v3 speech speed is controlled via the dashboard Speech Speed slider
         return sarvam.TTS(model=model, speaker=voice, target_language_code=language)
@@ -178,12 +182,14 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
         if gemini_key:
             # Use Gemini's OpenAI-compatible endpoint for maximum stability and lower latency
             logger.info(f"[LLM] Google Gemini (OpenAI endpoint) — model={gemini_model}")
-            return openai.LLM(
+            llm_instance = openai.LLM(
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 api_key=gemini_key,
                 model=gemini_model,
                 temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
             )
+            _patch_gemini_empty_response(llm_instance)
+            return llm_instance
         logger.warning("[LLM] Google requested but no API key found — falling back to Groq")
 
     if provider == "openai":
@@ -205,6 +211,61 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
         model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
     )
+
+
+# ── Gemini Empty-Response Patch ──────────────────────────────────────────────
+# Known bug: Gemini intermittently returns streaming responses with finish_reason=STOP
+# but empty text content and no function calls. This causes the agent to silently stall.
+# Reference: https://github.com/livekit/agents/issues/4066, #4706
+# This patch wraps the LLM to detect empty responses.
+
+class _GeminiSafeStream:
+    """Wraps an LLMStream, detecting empty Gemini STOP responses."""
+    def __init__(self, inner):
+        self._inner = inner
+        self._has_content = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        chunk = await self._inner.__anext__()
+        try:
+            if hasattr(chunk, 'choices') and chunk.choices:
+                choice = chunk.choices[0]
+                delta = getattr(choice, 'delta', None)
+                if delta:
+                    if getattr(delta, 'content', None):
+                        self._has_content = True
+                    if getattr(delta, 'tool_calls', None):
+                        self._has_content = True
+        except StopAsyncIteration:
+            raise
+        return chunk
+
+
+class _GeminiSafeContextManager:
+    """Async context manager that wraps the original chat() and detects empty responses."""
+    def __init__(self, original_ctx_manager):
+        self._ctx = original_ctx_manager
+
+    async def __aenter__(self):
+        inner = await self._ctx.__aenter__()
+        return _GeminiSafeStream(inner)
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return await self._ctx.__aexit__(exc_type, exc_val, exc_tb)
+
+
+def _patch_gemini_empty_response(llm_instance):
+    """Monkey-patch to wrap Gemini's chat() with empty-response detection."""
+    original_chat = llm_instance.chat
+
+    def _patched_chat(*args, **kwargs):
+        original_ctx = original_chat(*args, **kwargs)
+        return _GeminiSafeContextManager(original_ctx)
+
+    llm_instance.chat = _patched_chat
 
 
 # =============================================================================
@@ -254,7 +315,7 @@ class OutboundTools(llm.ToolContext):
             "This gives you a 'memory' to keep track of information for the remainder of the call."
         )
     )
-    def save_memory(self, memory_text: str):
+    async def save_memory(self, memory_text: str):
         """
         Store a note or information in the agent's memory.
         
@@ -382,19 +443,23 @@ class OutboundAssistant(Agent):
             "\n\n## TELEPHONY VOICE RULES (MANDATORY):\n"
             "You are speaking on a live telephone call, NOT writing a chat message.\n"
             "1. BREVITY: Your responses must be 1 or 2 short sentences MAX. Never use bullet points, numbered lists, or bold markdown.\n"
-            "2. FILLERS: Occasionally use natural fillers like 'Got it,' 'Sure,' 'Right,' or 'Let me check that for you' at the start of your responses.\n"
+            "2. FILLERS: Use natural conversational fillers like 'Haan ji,' 'Bilkul,' 'Achha,' 'Samajh gaya,' at the start.\n"
             "3. TTS SAFETY: Never write symbols, dates, numbers, or currencies as digits. "
             "Spell them out in words. Write 'five hundred rupees' not '₹500'. Write 'twelfth of May, twenty twenty-six' not '12/05/2026'. "
             "Never use asterisks, hashtags, or any markdown formatting.\n"
             "4. PACING: Speak in short clauses. Use commas and periods to create natural pauses.\n"
+            "5. ALWAYS RESPOND: Every user message MUST get a spoken reply. Never stay silent. "
+            "If you are unsure what to say, acknowledge with something natural like 'Haan ji, bataiye' or 'Ji sun raha hoon.'\n"
+            "6. NATURAL FLOW: Speak like a real person on a phone call. React to what they say. "
+            "Match their energy — if they are casual, be casual. If they are formal, be formal.\n"
         )
 
         instructions += (
-            "\n\nCRITICAL MULTILINGUAL INSTRUCTION: Your Text-to-Speech engine is strict. "
-            "If the user speaks Hindi or any language other than English, you MUST call the `change_spoken_language` tool "
-            "with the correct language code (e.g. 'hi-IN') BEFORE you reply in that language! "
-            "If you generate Hindi text without calling the tool first, the audio engine will crash and the call will drop. "
-            "IMPORTANT TO REDUCE DELAYS: ONLY call this tool if you actually need to switch languages. If you are already speaking Hindi, DO NOT call the tool again, just reply immediately!"
+            "\n\nCRITICAL MULTILINGUAL INSTRUCTION: You MUST speak in the same language the customer uses. "
+            "If the customer speaks Hindi, reply in Hindi. If they speak English, reply in English. "
+            "If they mix Hindi and English (Hinglish), reply in Hinglish. Match their language naturally. "
+            "IMPORTANT: Do NOT call change_spoken_language for Hindi — the TTS already supports Hindi natively. "
+            "Only call change_spoken_language if you need a specific regional language like Tamil, Telugu, etc."
         )
             
         if tts_language and "en" not in tts_language.lower():
@@ -585,18 +650,20 @@ async def entrypoint(ctx: agents.JobContext):
         turn_handling=TurnHandlingOptions(
             turn_detection="vad",
             endpointing={
-                "min_delay": 0.0,    # No forced wait — fire LLM the INSTANT VAD detects silence
-                "max_delay": 0.6,    # Safety cap in case VAD misses end of utterance
+                "mode": "dynamic",       # ADAPTIVE endpointing — matches each caller's pace
+                "min_delay": 0.3,        # 300ms minimum wait after silence (prevents responding mid-thought)
+                "max_delay": 2.0,        # 2s max before forcing turn close (allows natural pauses)
             },
             interruption={
                 "enabled": True,
-                "mode": "adaptive",              # Clear TTS buffer immediately on barge-in
-                "min_duration": 0.05,            # 50ms of speech is enough to interrupt
-                "false_interruption_timeout": 0.5, # Resume agent if interruption < 500ms (noise)
+                "mode": "vad",           # Use VAD mode (switch to "adaptive" if on LiveKit Cloud)
+                "min_duration": 0.5,     # 500ms minimum speech to register as interruption
+                "min_words": 1,          # Require at least 1 word before interrupting
+                "false_interruption_timeout": 2.0,  # Wait 2s before resuming after noise
                 "resume_false_interruption": True,
             },
             preemptive_generation={
-                "enabled": True,                 # LLM starts generating WHILE user is still talking
+                "enabled": True,         # Re-enable — LLM pre-generates response while user talks
             },
         ),
     )
@@ -615,16 +682,27 @@ async def entrypoint(ctx: agents.JobContext):
         call_connected_event=call_connected_event
     )
 
+    # Accumulate transcripts reliably since livekit-agents v0.8+ session history structure varies
+    call_transcript_messages = []
+
     # ── Analytics: write campaign result when call ends so Live Results table populates ──
     @ctx.room.on("disconnected")
     def on_disconnected(*args, **kwargs):
         logger.info("[OUTBOUND] Call disconnected. Running analytics...")
         import analytics
-        msgs = (
-            agent_instance.chat_ctx.messages()
-            if callable(getattr(agent_instance.chat_ctx, "messages", None))
-            else getattr(agent_instance.chat_ctx, "messages", [])
-        )
+        
+        # In modern livekit-agents, session manages history. For maximum reliability, 
+        # we pass the real-time transcript accumulated via session events if available.
+        # Fallback to session.chat_ctx or session.history if the list is empty.
+        msgs = call_transcript_messages
+        if not msgs:
+            if hasattr(session, "chat_ctx"):
+                msgs = session.chat_ctx.messages() if callable(getattr(session.chat_ctx, "messages", None)) else getattr(session.chat_ctx, "messages", [])
+            elif hasattr(session, "history"):
+                msgs = session.history.messages() if callable(getattr(session.history, "messages", None)) else getattr(session.history, "messages", [])
+            else:
+                msgs = agent_instance.chat_ctx.messages() if callable(getattr(agent_instance.chat_ctx, "messages", None)) else getattr(agent_instance.chat_ctx, "messages", [])
+
         asyncio.create_task(
             analytics.analyze_and_save_call(
                 phone_number=phone_number or "unknown",
@@ -644,23 +722,7 @@ async def entrypoint(ctx: agents.JobContext):
     if hasattr(ctx.room.local_participant, "update_name"):
         await ctx.room.local_participant.update_name(final_agent_name)
 
-    @ctx.room.on("disconnected")
-    def on_disconnected(*args, **kwargs):
-        logger.info("[OUTBOUND] Call disconnected. Running analytics...")
-        import analytics
-        msgs = agent_instance.chat_ctx.messages() if callable(getattr(agent_instance.chat_ctx, "messages", None)) else getattr(agent_instance.chat_ctx, "messages", [])
-        asyncio.create_task(
-            analytics.analyze_and_save_call(
-                phone_number=phone_number or "unknown",
-                direction="outbound",
-                chat_messages=msgs,
-                campaign_id=campaign_id,
-                lead_row_index=lead_row_index,
-                lead_email=lead_email,
-                workflow_run_id=workflow_run_id,
-                room_name=ctx.room.name,
-            )
-        )
+
 
     # Note: RoomInputOptions removed to prevent deprecation warnings and access violation bugs with Rust core
     await session.start(agent_instance, room=ctx.room)
@@ -707,7 +769,46 @@ async def entrypoint(ctx: agents.JobContext):
         except Exception as e:
             logger.error(f"[OUTBOUND] Dial failed: {e}")
             import traceback; logger.error(traceback.format_exc())
-            ctx.shutdown()
+
+            # ── Graceful failure: write campaign result instead of crashing ──
+            # When the trunk is busy (486) or any dial error occurs, write a
+            # "No Answer" result so the bulk dialer report is accurate, then
+            # clean up instead of crashing the entire agent process.
+            if campaign_id:
+                try:
+                    import analytics
+                    analytics_result = {
+                        "row_index":    lead_row_index,
+                        "phone_number": phone_number or "unknown",
+                        "lead_email":   lead_email,
+                        "status":       "No Answer",
+                        "remarks":      f"Dial failed: {e}",
+                        "sentiment":    "",
+                        "intent":       "",
+                        "timestamp":    datetime.datetime.now().isoformat(),
+                    }
+                    campaign_file = os.path.join("data", f"campaign_{campaign_id}.json")
+                    existing = []
+                    if os.path.exists(campaign_file):
+                        try:
+                            with open(campaign_file, "r", encoding="utf-8") as f:
+                                existing = json.load(f)
+                        except Exception:
+                            pass
+                    existing.append(analytics_result)
+                    with open(campaign_file, "w", encoding="utf-8") as f:
+                        json.dump(existing, f, indent=2)
+                    logger.info(f"[OUTBOUND] Campaign failure result written (row {lead_row_index})")
+                except Exception as write_err:
+                    logger.error(f"[OUTBOUND] Failed to write campaign failure result: {write_err}")
+
+            # Disconnect cleanly — don't call ctx.shutdown() which kills the
+            # entire worker process and all other concurrent call sessions.
+            try:
+                await ctx.room.disconnect()
+            except Exception:
+                pass
+            return
     else:
         logger.info("[OUTBOUND] No dial needed (SIP already present or fallback). Triggering greeting instantly...")
         call_connected_event.set()
@@ -721,6 +822,7 @@ async def entrypoint(ctx: agents.JobContext):
         is_final = getattr(event, 'is_final', True)
         if is_final and text:
             logger.info(f"[TRANSCRIPT] ▶ USER : {text.strip()}")
+            call_transcript_messages.append({"role": "user", "content": text.strip()})
 
     @session.on("agent_state_changed")
     def _on_agent_state(event):
@@ -741,9 +843,12 @@ async def entrypoint(ctx: agents.JobContext):
             if hasattr(content, '__iter__') else str(content)
         )
         if role == 'user':
-            logger.info(f"[TRANSCRIPT] ▶ USER : {text.strip()}")
+            # user messages are handled by user_input_transcribed for better accuracy
+            # but in case it's missed or synthesized, we can optionally capture here
+            pass
         elif role in ('assistant', 'agent'):
             logger.info(f"[TRANSCRIPT] ◀ AGENT: {text.strip()}")
+            call_transcript_messages.append({"role": "assistant", "content": text.strip()})
 
 if __name__ == "__main__":
     agents.cli.run_app(

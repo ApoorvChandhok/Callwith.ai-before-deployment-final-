@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useRef } from "react";
-import { X, Info, Plus, Trash2, Pin, PinOff, ChevronDown, ChevronUp, Copy, Check, AlertCircle, Code2, Zap, Loader2, Edit2, Save, UploadCloud } from "lucide-react";
+import { X, Info, Plus, Trash2, Pin, PinOff, ChevronDown, ChevronUp, Copy, Check, AlertCircle, AlertTriangle, Code2, Zap, Loader2, Edit2, Save, UploadCloud } from "lucide-react";
 import type { WorkflowNode, SwitchRule } from "@/lib/workflow-types";
 import { getNodeMetadata } from "@/lib/workflow-types";
 
@@ -312,7 +312,7 @@ function DataViewTabs({
 interface Props {
   node: WorkflowNode | null;
   onClose: () => void;
-  onUpdate: (id: string, config: Record<string, any>, label?: string) => void;
+  onUpdate: (id: string, config: Record<string, any>, label?: string, nodeOverrides?: Record<string, any>) => void;
   executionData?: any;
   nodes?: WorkflowNode[];
   edges?: any[];
@@ -1590,6 +1590,71 @@ export default function WorkflowNodeConfigPanel({ node, onClose, onUpdate, execu
           ))}
         </div>
       </div>
+
+      {/* Error Handling (n8n-pattern) */}
+      {node.category === "action" && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9] flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-orange-400" /> Error Handling
+          </label>
+          <div className="space-y-1.5">
+            <label className="flex items-start gap-2 cursor-pointer p-2.5 rounded-lg border border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors">
+              <input
+                type="checkbox"
+                checked={!!node.continueOnFail}
+                onChange={(e) => onUpdate(node.id, node.config, undefined, { continueOnFail: e.target.checked })}
+                className="w-3.5 h-3.5 accent-[#f59e0b] rounded mt-0.5"
+              />
+              <div>
+                <div className="text-xs font-medium text-gray-800 dark:text-[#e6edf3]">Continue On Fail</div>
+                <div className="text-[10px] text-gray-400 dark:text-[#6e7681]">If this node fails, continue the workflow instead of stopping</div>
+              </div>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer p-2.5 rounded-lg border border-gray-200 dark:border-[#30363d] hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors">
+              <input
+                type="checkbox"
+                checked={!!node.retryOnFail}
+                onChange={(e) => {
+                  const retryCount = node.retryCount || 3;
+                  const retryIntervalMs = node.retryIntervalMs || 1000;
+                  onUpdate(node.id, node.config, undefined, { retryOnFail: e.target.checked, retryCount, retryIntervalMs });
+                }}
+                className="w-3.5 h-3.5 accent-[#f59e0b] rounded mt-0.5"
+              />
+              <div>
+                <div className="text-xs font-medium text-gray-800 dark:text-[#e6edf3]">Retry On Fail</div>
+                <div className="text-[10px] text-gray-400 dark:text-[#6e7681]">Automatically retry this node when it fails</div>
+              </div>
+            </label>
+          </div>
+          {node.retryOnFail && (
+            <div className="grid grid-cols-2 gap-2 pl-6">
+              <div>
+                <label className="text-[10px] font-medium text-[#8b949e]">Retries</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={node.retryCount || 3}
+                  onChange={(e) => onUpdate(node.id, node.config, undefined, { retryCount: parseInt(e.target.value) || 3 })}
+                  className="w-full px-2 py-1.5 text-xs rounded-md border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-medium text-[#8b949e]">Delay (ms)</label>
+                <input
+                  type="number"
+                  min={100}
+                  step={100}
+                  value={node.retryIntervalMs || 1000}
+                  onChange={(e) => onUpdate(node.id, node.config, undefined, { retryIntervalMs: parseInt(e.target.value) || 1000 })}
+                  className="w-full px-2 py-1.5 text-xs rounded-md border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Node notes */}
       <div className="space-y-1.5">

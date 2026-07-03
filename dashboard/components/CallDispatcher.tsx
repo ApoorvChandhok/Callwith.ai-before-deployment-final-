@@ -256,79 +256,83 @@ export default function CallDispatcher() {
                 </div>
 
                 <form onSubmit={handleDispatch} className="space-y-4">
-                    {/* Phone number */}
+                    {/* Phone number — full width */}
                     <div className="space-y-1.5">
                         <label className="text-sm font-medium text-gray-700 dark:text-[#e6edf3]">Phone Number *</label>
                         <input type="tel" placeholder="+919876543210" required value={phoneNumber}
                             onChange={(e) => setPhoneNumber(e.target.value)} className={inputClass} />
                     </div>
 
-                    {/* Section A: Agent Persona */}
-                    <Section title="Agent Persona" icon={Bot} color="indigo" defaultOpen={true}>
-                        <p className="text-xs text-gray-400 dark:text-[#8b949e]">
-                            Defines who the agent is for this call. If left blank, the saved outbound config defaults apply.
-                        </p>
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider mb-1.5">Agent Name (optional)</label>
-                            <input type="text" placeholder="e.g. Priya, Rahul, Alex" value={agentName}
-                                onChange={(e) => setAgentName(e.target.value)} className={inputClass} />
-                        </div>
-                        <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider">System Prompt</label>
-                                <span className="text-[10px] text-gray-400 dark:text-[#484f58] font-mono">{systemPrompt.length} chars</span>
+                    {/* Two-column layout: Agent Persona | Knowledge Base + Context */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Left: Agent Persona */}
+                        <Section title="Agent Persona" icon={Bot} color="indigo" defaultOpen={true}>
+                            <p className="text-xs text-gray-400 dark:text-[#8b949e]">
+                                Defines who the agent is for this call. If left blank, the saved outbound config defaults apply.
+                            </p>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider mb-1.5">Agent Name (optional)</label>
+                                <input type="text" placeholder="e.g. Priya, Rahul, Alex" value={agentName}
+                                    onChange={(e) => setAgentName(e.target.value)} className={inputClass} />
                             </div>
-                            <textarea value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} rows={8}
-                                placeholder="You are a helpful agent calling about... Define the agent's full persona, knowledge, rules, and tone here."
-                                className={`${inputClass} resize-none`} />
-                            {systemPrompt.trim() && (
-                                <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">
-                                    ✓ This prompt will fully override the saved outbound config for this call.
-                                </p>
-                            )}
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider mb-1.5">Initial Greeting (optional)</label>
-                            <input type="text" placeholder="e.g. Hello, this is Priya calling from XYZ. Is this a good time?"
-                                value={greeting} onChange={(e) => setGreeting(e.target.value)} className={inputClass} />
-                        </div>
-                    </Section>
-
-                    {/* Section B: Knowledge Base */}
-                    <Section title="Knowledge Base" icon={Brain} color="cyan" defaultOpen={false}>
-                        <p className="text-xs text-gray-400 dark:text-[#8b949e]">Upload a PDF, DOCX, or TXT file. The extracted text will be injected into the agent's context.</p>
-                        <input type="file" ref={ragInputRef} onChange={handleRagUpload} accept=".pdf,.docx,.txt" className="hidden" />
-                        {ragFileName ? (
-                            <div className="flex items-center gap-3 p-3 rounded-lg bg-cyan-50 dark:bg-[#39d2c0]/10 border border-cyan-200 dark:border-[#39d2c0]/30">
-                                <FileText className="w-4 h-4 text-cyan-500 dark:text-[#39d2c0] flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium text-gray-800 dark:text-[#e6edf3] truncate">{ragFileName}</p>
-                                    <p className="text-[10px] text-gray-400 dark:text-[#8b949e]">{ragContent.length.toLocaleString()} chars extracted</p>
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider">System Prompt</label>
+                                    <span className="text-[10px] text-gray-400 dark:text-[#484f58] font-mono">{systemPrompt.length} chars</span>
                                 </div>
-                                <button type="button" onClick={() => { setRagContent(''); setRagFileName(''); }}
-                                    className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-[#da3633] transition-colors">
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
+                                <textarea value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} rows={8}
+                                    placeholder="You are a helpful agent calling about... Define the agent's full persona, knowledge, rules, and tone here."
+                                    className={`${inputClass} resize-none`} />
+                                {systemPrompt.trim() && (
+                                    <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">
+                                        ✓ This prompt will fully override the saved outbound config for this call.
+                                    </p>
+                                )}
                             </div>
-                        ) : (
-                            <button type="button" onClick={() => ragInputRef.current?.click()} disabled={ragUploading}
-                                className="w-full flex flex-col items-center gap-2 py-6 rounded-lg border-2 border-dashed border-gray-200 dark:border-[#30363d] hover:border-cyan-400 dark:hover:border-[#39d2c0]/50 hover:bg-cyan-50/30 dark:hover:bg-[#39d2c0]/5 transition-colors text-gray-400 dark:text-[#8b949e]">
-                                {ragUploading ? <Loader2 className="w-5 h-5 animate-spin text-cyan-500" /> : <Upload className="w-5 h-5" />}
-                                <span className="text-xs font-medium">{ragUploading ? 'Uploading...' : 'Click to upload knowledge base'}</span>
-                                <span className="text-[10px] text-gray-300 dark:text-[#484f58]">PDF, DOCX, TXT</span>
-                            </button>
-                        )}
-                    </Section>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider mb-1.5">Initial Greeting (optional)</label>
+                                <input type="text" placeholder="e.g. Hello, this is Priya calling from XYZ. Is this a good time?"
+                                    value={greeting} onChange={(e) => setGreeting(e.target.value)} className={inputClass} />
+                            </div>
+                        </Section>
 
-                    {/* Section C: Additional Call Context */}
-                    <Section title="Additional Call Context" icon={MessageSquare} color="purple" defaultOpen={false}>
-                        <p className="text-xs text-gray-400 dark:text-[#8b949e]">Short note about this specific call (e.g. what the caller enquired about previously). Appended below the system prompt.</p>
-                        <textarea placeholder="e.g. This customer recently test-drove the Hyundai Creta and asked about finance options..."
-                            value={callContext} onChange={(e) => setCallContext(e.target.value)} rows={3}
-                            className={`${inputClass} resize-none`} />
-                    </Section>
+                        {/* Right: Knowledge Base + Call Context */}
+                        <div className="space-y-4">
+                            <Section title="Knowledge Base" icon={Brain} color="cyan" defaultOpen={false}>
+                                <p className="text-xs text-gray-400 dark:text-[#8b949e]">Upload a PDF, DOCX, or TXT file. The extracted text will be injected into the agent's context.</p>
+                                <input type="file" ref={ragInputRef} onChange={handleRagUpload} accept=".pdf,.docx,.txt" className="hidden" />
+                                {ragFileName ? (
+                                    <div className="flex items-center gap-3 p-3 rounded-lg bg-cyan-50 dark:bg-[#39d2c0]/10 border border-cyan-200 dark:border-[#39d2c0]/30">
+                                        <FileText className="w-4 h-4 text-cyan-500 dark:text-[#39d2c0] flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-medium text-gray-800 dark:text-[#e6edf3] truncate">{ragFileName}</p>
+                                            <p className="text-[10px] text-gray-400 dark:text-[#8b949e]">{ragContent.length.toLocaleString()} chars extracted</p>
+                                        </div>
+                                        <button type="button" onClick={() => { setRagContent(''); setRagFileName(''); }}
+                                            className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-[#da3633] transition-colors">
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button type="button" onClick={() => ragInputRef.current?.click()} disabled={ragUploading}
+                                        className="w-full flex flex-col items-center gap-2 py-6 rounded-lg border-2 border-dashed border-gray-200 dark:border-[#30363d] hover:border-cyan-400 dark:hover:border-[#39d2c0]/50 hover:bg-cyan-50/30 dark:hover:bg-[#39d2c0]/5 transition-colors text-gray-400 dark:text-[#8b949e]">
+                                        {ragUploading ? <Loader2 className="w-5 h-5 animate-spin text-cyan-500" /> : <Upload className="w-5 h-5" />}
+                                        <span className="text-xs font-medium">{ragUploading ? 'Uploading...' : 'Click to upload knowledge base'}</span>
+                                        <span className="text-[10px] text-gray-300 dark:text-[#484f58]">PDF, DOCX, TXT</span>
+                                    </button>
+                                )}
+                            </Section>
 
-                    {/* Voice / Model selectors */}
+                            <Section title="Additional Call Context" icon={MessageSquare} color="purple" defaultOpen={false}>
+                                <p className="text-xs text-gray-400 dark:text-[#8b949e]">Short note about this specific call (e.g. what the caller enquired about previously). Appended below the system prompt.</p>
+                                <textarea placeholder="e.g. This customer recently test-drove the Hyundai Creta and asked about finance options..."
+                                    value={callContext} onChange={(e) => setCallContext(e.target.value)} rows={3}
+                                    className={`${inputClass} resize-none`} />
+                            </Section>
+                        </div>
+                    </div>
+
+                    {/* Voice / Model selectors — full width */}
                     <div className="rounded-xl border border-gray-200 dark:border-[#30363d] bg-gray-50/50 dark:bg-[#0d1117]/40 p-4 space-y-4">
                         <p className="text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider">Voice & Model</p>
 
@@ -429,7 +433,7 @@ export default function CallDispatcher() {
                         </div>
                     </div>
 
-                    {/* Dispatch button */}
+                    {/* Dispatch button + message — full width */}
                     <button type="submit" disabled={status === 'loading' || catalogLoading}
                         className="w-full py-2.5 px-4 bg-indigo-500 dark:bg-indigo-600 hover:bg-indigo-600 dark:hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-sm shadow-indigo-500/20">
                         {status === 'loading' ? (<><Loader2 className="w-4 h-4 animate-spin" /> Dispatching...</>) : (<><Phone className="w-4 h-4" /> Initiate Call</>)}

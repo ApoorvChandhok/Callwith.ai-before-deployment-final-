@@ -39,14 +39,35 @@ async def analyze_and_save_call(
         # Build transcript — skip system messages (avoids hitting token limits with large prompts)
         transcript = []
         for msg in chat_messages:
-            role = getattr(msg, "role", "unknown")
-            if role == "system":
+            if isinstance(msg, dict):
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+            else:
+                role = getattr(msg, "role", "unknown")
+                content = getattr(msg, "content", "")
+                
+            if hasattr(role, "value"):
+                role = role.value
+            role_str = str(role).lower()
+            
+            if role_str == "system" or role_str.endswith(".system"):
                 continue  # exclude system prompt from transcript
-            content = getattr(msg, "content", "")
+            
             if isinstance(content, list):
-                content = " ".join([str(c) for c in content])
+                extracted = []
+                for c in content:
+                    if isinstance(c, str):
+                        extracted.append(c)
+                    elif hasattr(c, "text"):
+                        extracted.append(c.text)
+                    elif isinstance(c, dict) and "text" in c:
+                        extracted.append(c["text"])
+                    else:
+                        extracted.append(str(c))
+                content = " ".join(extracted)
+                
             if content and str(content).strip():
-                transcript.append(f"{role}: {content}")
+                transcript.append(f"{role_str}: {content}")
             
         full_transcript = "\n".join(transcript)
         

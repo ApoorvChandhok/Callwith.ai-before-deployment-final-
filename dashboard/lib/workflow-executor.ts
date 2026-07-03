@@ -370,6 +370,245 @@ async function executeActionNode(
       }
     }
 
+    // ── send_sms (Twilio) ─────────────────────────────────────────────────
+    if (type === "send_sms") {
+      const accountSid = process.env.TWILIO_ACCOUNT_SID;
+      const authToken = process.env.TWILIO_AUTH_TOKEN;
+      const fromNumber = process.env.TWILIO_FROM_NUMBER;
+      if (!accountSid || !authToken || !fromNumber) {
+        return { success: false, output: {}, error: "Twilio credentials not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)" };
+      }
+      const to = resolvedConfig.to || ctx.lead?.phone || "";
+      if (!to) return { success: false, output: {}, error: "No recipient phone number" };
+      const body = resolvedConfig.body || resolvedConfig.message || "";
+      const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+        },
+        body: new URLSearchParams({ To: to, From: fromNumber, Body: body }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, output: data, error: data.message || `Twilio error ${res.status}` };
+      return { success: true, output: { sid: data.sid, status: data.status, to: data.to } };
+    }
+
+    // ── send_slack ────────────────────────────────────────────────────────
+    if (type === "send_slack") {
+      const token = process.env.SLACK_BOT_TOKEN;
+      if (!token) return { success: false, output: {}, error: "SLACK_BOT_TOKEN not configured" };
+      const channel = resolvedConfig.channel || "#general";
+      const message = resolvedConfig.message || "";
+      const res = await fetch("https://slack.com/api/chat.postMessage", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, text: message }),
+      });
+      const data = await res.json();
+      if (!data.ok) return { success: false, output: data, error: data.error };
+      return { success: true, output: { ts: data.ts, channel: data.channel } };
+    }
+
+    // ── send_telegram ─────────────────────────────────────────────────────
+    if (type === "send_telegram") {
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      if (!token) return { success: false, output: {}, error: "TELEGRAM_BOT_TOKEN not configured" };
+      const chatId = resolvedConfig.chatId || ctx.lead?.phone || "";
+      if (!chatId) return { success: false, output: {}, error: "No chatId provided" };
+      const message = resolvedConfig.message || "";
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
+      });
+      const data = await res.json();
+      if (!data.ok) return { success: false, output: data, error: data.description };
+      return { success: true, output: { messageId: data.result?.message_id } };
+    }
+
+    // ── send_instagram_dm ─────────────────────────────────────────────────
+    if (type === "send_instagram_dm") {
+      const token = process.env.INSTAGRAM_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN;
+      const recipientId = resolvedConfig.recipientId || ctx.lead?.instagram_id || "";
+      if (!token) return { success: false, output: {}, error: "INSTAGRAM_ACCESS_TOKEN not configured" };
+      if (!recipientId) return { success: false, output: {}, error: "No recipient ID provided" };
+      const message = resolvedConfig.message || "";
+      const res = await fetch("https://graph.facebook.com/v18.0/me/messages", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient: { id: recipientId }, message: { text: message } }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return { success: false, output: data, error: data.error?.message };
+      return { success: true, output: { messageId: data.message_id } };
+    }
+
+    // ── send_to_sheets (Google Sheets append row) ─────────────────────────
+    if (type === "send_to_sheets") {
+      const spreadsheetId = resolvedConfig.spreadsheetId || "";
+      const sheetName = resolvedConfig.sheetName || "Sheet1";
+      if (!spreadsheetId) return { success: false, output: {}, error: "No spreadsheet ID provided" };
+      // Reuse Gmail OAuth tokens for Google Sheets API
+      const integrationsFile = path.join(DATA_DIR, "integrations.json");
+      let accessToken = "";
+      try {
+        if (fs.existsSync(integrationsFile)) {
+          const integ = JSON.parse(fs.readFileSync(integrationsFile, "utf-8"));
+          accessToken = integ.gmail?.access_token || "";
+        }
+      } catch {}
+      if (!accessToken) return { success: false, output: {}, error: "Google account not connected. Connect Gmail in Integrations." };
+      const values = resolvedConfig.values || resolvedConfig.row || [];
+      const row = Array.isArray(values) ? values : Object.values(values);
+      const res = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetName}:append?valueInputOption=USER_ENTERED`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ values: [row] }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) return { success: false, output: data, error: data.error?.message };
+      return { success: true, output: { updatedRange: data.updates?.updatedRange, updatedRows: data.updates?.updatedRows } };
+    }
+
+    // ── create_calendar_event (Google Calendar) ───────────────────────────
+    if (type === "create_calendar_event") {
+      const calendarId = resolvedConfig.calendarId || "primary";
+      const title = resolvedConfig.title || resolvedConfig.summary || "Workflow Event";
+      const startTime = resolvedConfig.startTime || new Date().toISOString();
+      const endTime = resolvedConfig.endTime || new Date(Date.now() + 3600000).toISOString();
+      const description = resolvedConfig.description || "";
+      const location = resolvedConfig.location || "";
+      const integrationsFile = path.join(DATA_DIR, "integrations.json");
+      let accessToken = "";
+      try {
+        if (fs.existsSync(integrationsFile)) {
+          const integ = JSON.parse(fs.readFileSync(integrationsFile, "utf-8"));
+          accessToken = integ.gmail?.access_token || "";
+        }
+      } catch {}
+      if (!accessToken) return { success: false, output: {}, error: "Google account not connected. Connect Gmail in Integrations." };
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            summary: title,
+            description,
+            location,
+            start: { dateTime: startTime },
+            end: { dateTime: endTime },
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) return { success: false, output: data, error: data.error?.message };
+      return { success: true, output: { eventId: data.id, htmlLink: data.htmlLink, status: data.status } };
+    }
+
+    // ── hubspot_create_contact ────────────────────────────────────────────
+    if (type === "hubspot_create_contact") {
+      const apiKey = process.env.HUBSPOT_API_KEY;
+      if (!apiKey) return { success: false, output: {}, error: "HUBSPOT_API_KEY not configured" };
+      const properties: Record<string, string> = {};
+      if (resolvedConfig.email || ctx.lead?.email) properties.email = resolvedConfig.email || ctx.lead?.email;
+      if (resolvedConfig.firstName || ctx.lead?.name) properties.firstname = resolvedConfig.firstName || ctx.lead?.name?.split(" ")[0] || "";
+      if (resolvedConfig.lastName || ctx.lead?.name) properties.lastname = resolvedConfig.lastName || ctx.lead?.name?.split(" ").slice(1).join(" ") || "";
+      if (resolvedConfig.phone || ctx.lead?.phone) properties.phone = resolvedConfig.phone || ctx.lead?.phone;
+      if (resolvedConfig.company) properties.company = resolvedConfig.company;
+      const res = await fetch("https://api.hubapi.com/crm/v3/objects/contacts", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ properties }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, output: data, error: data.message };
+      return { success: true, output: { contactId: data.id, createdAt: data.createdAt } };
+    }
+
+    // ── salesforce_update ─────────────────────────────────────────────────
+    if (type === "salesforce_update") {
+      const accessToken = process.env.SALESFORCE_ACCESS_TOKEN;
+      const instanceUrl = process.env.SALESFORCE_INSTANCE_URL || "https://login.salesforce.com";
+      if (!accessToken) return { success: false, output: {}, error: "SALESFORCE_ACCESS_TOKEN not configured" };
+      const objectType = resolvedConfig.objectType || "Contact";
+      const objectId = resolvedConfig.objectId || ctx.lead?.salesforce_id || "";
+      if (!objectId) return { success: false, output: {}, error: "No Salesforce object ID provided" };
+      const fields: Record<string, string> = resolvedConfig.fields || {};
+      const res = await fetch(`${instanceUrl}/services/data/v58.0/sobjects/${objectType}/${objectId}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { success: false, output: data, error: data[0]?.message || `Salesforce error ${res.status}` };
+      }
+      return { success: true, output: { updated: true, objectType, objectId } };
+    }
+
+    // ── airtable_row ──────────────────────────────────────────────────────
+    if (type === "airtable_row") {
+      const apiKey = process.env.AIRTABLE_API_KEY;
+      if (!apiKey) return { success: false, output: {}, error: "AIRTABLE_API_KEY not configured" };
+      const baseId = resolvedConfig.baseId || "";
+      const tableName = resolvedConfig.tableName || "Table 1";
+      if (!baseId) return { success: false, output: {}, error: "No Airtable base ID provided" };
+      const fields: Record<string, any> = resolvedConfig.fields || {};
+      const res = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, output: data, error: data.error?.message };
+      return { success: true, output: { recordId: data.id, created: true } };
+    }
+
+    // ── notion_page ───────────────────────────────────────────────────────
+    if (type === "notion_page") {
+      const apiKey = process.env.NOTION_API_KEY;
+      if (!apiKey) return { success: false, output: {}, error: "NOTION_API_KEY not configured" };
+      const parentId = resolvedConfig.parentPageId || "";
+      if (!parentId) return { success: false, output: {}, error: "No Notion parent page ID provided" };
+      const title = resolvedConfig.title || "Workflow Page";
+      const content = resolvedConfig.content || "";
+      const res = await fetch("https://api.notion.com/v1/pages", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Notion-Version": "2022-06-28" },
+        body: JSON.stringify({
+          parent: { page_id: parentId },
+          properties: { title: { title: [{ text: { content: title } }] } },
+          children: content ? [{ object: "block", type: "paragraph", paragraph: { rich_text: [{ text: { content } }] } }] : [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, output: data, error: data.message };
+      return { success: true, output: { pageId: data.id, url: data.url } };
+    }
+
+    // ── sub_workflow ──────────────────────────────────────────────────────
+    if (type === "sub_workflow") {
+      const subWorkflowId = resolvedConfig.workflowId || "";
+      if (!subWorkflowId) return { success: false, output: {}, error: "No sub-workflow ID provided" };
+      const workflowsFile = path.join(DATA_DIR, "workflows.json");
+      if (!fs.existsSync(workflowsFile)) return { success: false, output: {}, error: "No workflows found" };
+      const allWorkflows = JSON.parse(fs.readFileSync(workflowsFile, "utf-8"));
+      const subWf = allWorkflows.find((w: any) => w.id === subWorkflowId);
+      if (!subWf) return { success: false, output: {}, error: `Workflow ${subWorkflowId} not found` };
+      // Execute sub-workflow with current context
+      const subResult = await executeWorkflow(subWf, "sub_workflow", ctx.$trigger || {}, {
+        dashboardUrl,
+        initialContext: ctx,
+      });
+      return { success: subResult.status !== "error", output: { runId: subResult.id, status: subResult.status, steps: subResult.steps.length } };
+    }
+
     console.warn(`[Workflow] Unknown action node type: ${type}. Skipping.`);
     return { success: true, output: { skipped: true, reason: `Unsupported node type: ${type}` } };
 
@@ -612,6 +851,15 @@ export async function executeWorkflow(
           }
         }
       }
+
+      // ── loop_items: re-queue itself to process next item ──
+      // When the loop port fires, we need to re-evaluate loop_items
+      // so it advances to the next item. It re-queues itself at the
+      // END of the queue so its children execute first.
+      if (node.type === "loop_items" && port === "loop") {
+        queue.push(node.id);
+      }
+
       continue;
     }
 
@@ -658,16 +906,31 @@ export async function executeWorkflow(
       return finalRun;
     }
 
-    // ── Action Nodes ──────────────────────────────────────────────────────
-    const { success, output, error } = await executeActionNode(node, resolvedConfig, ctx, dashboardUrl);
+    // ── Action Nodes (with retry + continueOnFail) ────────────────────────
+    let actionResult: { success: boolean; output: Record<string, any>; error?: string } = { success: false, output: {} };
+    const maxRetries = node.config?.retryOnFail ? (node.config.retryCount || 3) : 1;
+    const retryDelayMs = node.config?.retryOnFail ? ((node.config.retryIntervalMs || 1000)) : 0;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      actionResult = await executeActionNode(node, resolvedConfig, ctx, dashboardUrl);
+      if (actionResult.success || attempt >= maxRetries) break;
+      console.log(`[Workflow] Node "${node.label}" attempt ${attempt}/${maxRetries} failed, retrying in ${retryDelayMs}ms...`);
+      await new Promise((r) => setTimeout(r, retryDelayMs));
+    }
+
+    const { success, output, error } = actionResult;
     const durationMs = Date.now() - nodeStart;
+
+    // If continueOnFail is enabled, treat failures as success (continue workflow)
+    const effectiveSuccess = node.config?.continueOnFail ? true : success;
+    const stepStatus: "success" | "error" = success ? "success" : "error";
 
     steps.push({
       nodeId: node.id, label: node.label, type: node.type,
-      status: success ? "success" : "error", durationMs, output, error,
+      status: stepStatus, durationMs, output, error,
     });
 
-    if (!success) hasError = true;
+    if (!effectiveSuccess) hasError = true;
     if (ctx.$nodes) ctx.$nodes[node.label] = { json: output || {} };
 
     // Queue next nodes

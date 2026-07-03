@@ -5,14 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Save, Play, Pause, PanelLeftClose, PanelLeft, History,
   Trash2, Loader2, Sparkles, X, Download, Upload, Settings2, CheckCircle2,
-  Undo2, Redo2,
 } from "lucide-react";
 import type { WorkflowNode, WorkflowEdge, NodeMetadata } from "@/lib/workflow-types";
 import { getWorkflow, createWorkflow, updateWorkflow } from "@/lib/workflow-actions";
 import { resolveConfigTemplates, evaluateSwitchRule, executeCodeNode } from "@/lib/expression-engine";
 import WorkflowCanvas from "@/components/workflows/WorkflowCanvas";
 import WorkflowNodePalette from "@/components/workflows/WorkflowNodePalette";
-import NodeConfigPanel from "@/components/workflows/NodeConfigPanel";
+import WorkflowNodeConfigPanel from "@/components/workflows/WorkflowNodeConfigPanel";
 import { useCopilotContext } from "@/components/copilot/CopilotContext";
 import { validateAllNodes } from "@/lib/workflow-validation";
 
@@ -68,9 +67,6 @@ async function buildNodeOutput(
 
     switch (node.type) {
       case "manual_trigger":
-        output = { timestamp: new Date().toISOString(), triggerType: "manual" };
-        break;
-
       case "new_lead":
       case "form_submitted":
         output = { ...input };
@@ -569,8 +565,8 @@ function BuilderContent() {
       nodes.forEach((n) => {
         exec1.nodeExecutions[n.id] = {
           nodeId: n.id, nodeLabel: n.label, type: n.type, status: "success",
-          input: n.type === "manual_trigger" ? {} : { lead: DEMO_LEAD },
-          output: n.type === "manual_trigger" ? { timestamp: new Date().toISOString() } : { success: true, timestamp: new Date(Date.now() - 1000 * 60 * 12 + 1500).toISOString() },
+          input: { lead: DEMO_LEAD },
+          output: { success: true, timestamp: new Date(Date.now() - 1000 * 60 * 12 + 1500).toISOString() },
           startedAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
           finishedAt: new Date(Date.now() - 1000 * 60 * 12 + 200).toISOString(),
           executionMs: Math.floor(Math.random() * 300) + 50,
@@ -1159,12 +1155,17 @@ function BuilderContent() {
 
         {/* Right panel: config or executions */}
         {selectedNode && (
-          <NodeConfigPanel
+          <WorkflowNodeConfigPanel
             node={selectedNode}
             onClose={() => setSelectedNodeId(null)}
             onUpdate={handleUpdateNodeConfig}
             executionData={executions[0]?.nodeExecutions?.[selectedNode.id]}
+            nodes={nodes}
+            edges={edges}
+            selectedExecution={selectedExecution}
+            onSelectNode={setSelectedNodeId}
             onTestStep={handleTestStep}
+            nodeOutputMap={panelNodeOutputMap}
             isTestingStep={isTestingStep}
           />
         )}

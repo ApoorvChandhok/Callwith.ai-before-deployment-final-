@@ -69,9 +69,9 @@ logger.info("[INBOUND] Agent initialized")
 # Pre-load VAD model at startup (avoids cold-load delay on first call)
 # Tuned for telephony: fast onset detection + tighter silence window
 _VAD = silero.VAD.load(
-    min_silence_duration=0.15,    # 150ms silence before VAD declares end-of-speech (tighter)
-    activation_threshold=0.25,    # Lower = starts transcribing sooner on soft speech onsets
-    min_speech_duration=0.05,     # 50ms minimum to count as speech (filters DTMF tones & pops)
+    min_silence_duration=0.55,    # 550ms — matches natural phone conversation pauses
+    activation_threshold=0.35,    # Higher threshold to filter telephony line noise/static
+    min_speech_duration=0.25,     # 250ms minimum speech to register (filters DTMF/pops/breaths)
     sample_rate=16000,             # Match Deepgram's ingestion sample rate — no resampling overhead
 )
 
@@ -102,6 +102,10 @@ def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, v
         model    = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
         voice    = voice_override or ws_config.tts_voice or os.getenv("SARVAM_VOICE", "ishita")
         language = language_override or ws_config.tts_language or os.getenv("SARVAM_LANGUAGE", "en-IN")
+        # Validate voice is compatible with bulbul:v3 — fallback to ishita if not
+        if voice.lower() not in _SARVAM_VOICES:
+            logger.warning(f"[TTS] Voice '{voice}' not compatible with bulbul:v3 — falling back to 'ishita'")
+            voice = "ishita"
         logger.info(f"[TTS] Sarvam -- model={model}, speaker={voice}, lang={language}")
         # Note: Sarvam bulbul:v3 speech speed is controlled via the dashboard Speech Speed slider
         return sarvam.TTS(model=model, speaker=voice, target_language_code=language)
@@ -163,12 +167,14 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
         if gemini_key:
             # Use Gemini's OpenAI-compatible endpoint for maximum stability and lower latency
             logger.info(f"[LLM] Google Gemini (OpenAI endpoint) — model={gemini_model}")
-            return openai.LLM(
+            llm_instance = openai.LLM(
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 api_key=gemini_key,
                 model=gemini_model,
                 temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
             )
+            _patch_gemini_empty_response(llm_instance)
+            return llm_instance
         logger.warning("[LLM] Google requested but no API key found — falling back to Groq")
 
     if provider == "openai":
@@ -191,6 +197,60 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
         model=model,
         temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
     )
+
+
+# ── Gemini Empty-Response Patch ──────────────────────────────────────────────
+# Known bug: Gemini intermittently returns streaming responses with finish_reason=STOP
+# but empty text content and no function calls. This causes the agent to silently stall.
+# Reference: https://github.com/livekit/agents/issues/4066, #4706
+
+class _GeminiSafeStream:
+    """Wraps an LLMStream, detecting empty Gemini STOP responses."""
+    def __init__(self, inner):
+        self._inner = inner
+        self._has_content = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        chunk = await self._inner.__anext__()
+        try:
+            if hasattr(chunk, 'choices') and chunk.choices:
+                choice = chunk.choices[0]
+                delta = getattr(choice, 'delta', None)
+                if delta:
+                    if getattr(delta, 'content', None):
+                        self._has_content = True
+                    if getattr(delta, 'tool_calls', None):
+                        self._has_content = True
+        except StopAsyncIteration:
+            raise
+        return chunk
+
+
+class _GeminiSafeContextManager:
+    """Async context manager that wraps the original chat() and detects empty responses."""
+    def __init__(self, original_ctx_manager):
+        self._ctx = original_ctx_manager
+
+    async def __aenter__(self):
+        inner = await self._ctx.__aenter__()
+        return _GeminiSafeStream(inner)
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return await self._ctx.__aexit__(exc_type, exc_val, exc_tb)
+
+
+def _patch_gemini_empty_response(llm_instance):
+    """Monkey-patch to wrap Gemini's chat() with empty-response detection."""
+    original_chat = llm_instance.chat
+
+    def _patched_chat(*args, **kwargs):
+        original_ctx = original_chat(*args, **kwargs)
+        return _GeminiSafeContextManager(original_ctx)
+
+    llm_instance.chat = _patched_chat
 
 
 # =============================================================================
@@ -263,7 +323,7 @@ class InboundTools(llm.ToolContext):
             "This gives you a 'memory' to keep track of information for the remainder of the call."
         )
     )
-    def save_memory(self, memory_text: str):
+    async def save_memory(self, memory_text: str):
         """
         Store a note or information in the agent's memory.
         
@@ -630,18 +690,20 @@ async def entrypoint(ctx: agents.JobContext):
         turn_handling=TurnHandlingOptions(
             turn_detection="vad",
             endpointing={
-                "min_delay": 0.0,    # No forced wait — fire LLM the INSTANT VAD detects silence
-                "max_delay": 0.6,    # Safety cap in case VAD misses end of utterance
+                "mode": "dynamic",       # ADAPTIVE endpointing — matches each caller's pace
+                "min_delay": 0.3,        # 300ms minimum wait after silence
+                "max_delay": 2.0,        # 2s max before forcing turn close
             },
             interruption={
                 "enabled": True,
-                "mode": "adaptive",              # Clear TTS buffer immediately on barge-in
-                "min_duration": 0.05,            # 50ms of speech is enough to interrupt
-                "false_interruption_timeout": 0.5, # Resume agent if interruption < 500ms (noise)
+                "mode": "vad",           # Use VAD mode (switch to "adaptive" if on LiveKit Cloud)
+                "min_duration": 0.5,     # 500ms minimum speech to register as interruption
+                "min_words": 1,          # Require at least 1 word before interrupting
+                "false_interruption_timeout": 2.0,  # Wait 2s before resuming after noise
                 "resume_false_interruption": True,
             },
             preemptive_generation={
-                "enabled": True,                 # LLM starts generating WHILE user is still talking
+                "enabled": True,         # LLM pre-generates response while user talks
             },
         ),
     )
@@ -657,11 +719,22 @@ async def entrypoint(ctx: agents.JobContext):
         tts_language=config_dict.get("tts_language")
     )
 
+    call_transcript_messages = []
+
     @ctx.room.on("disconnected")
     def on_disconnected(*args, **kwargs):
         logger.info("[INBOUND] Call disconnected. Running analytics...")
         import analytics
-        msgs = agent_instance.chat_ctx.messages() if callable(getattr(agent_instance.chat_ctx, "messages", None)) else getattr(agent_instance.chat_ctx, "messages", [])
+        
+        msgs = call_transcript_messages
+        if not msgs:
+            if hasattr(session, "chat_ctx"):
+                msgs = session.chat_ctx.messages() if callable(getattr(session.chat_ctx, "messages", None)) else getattr(session.chat_ctx, "messages", [])
+            elif hasattr(session, "history"):
+                msgs = session.history.messages() if callable(getattr(session.history, "messages", None)) else getattr(session.history, "messages", [])
+            else:
+                msgs = agent_instance.chat_ctx.messages() if callable(getattr(agent_instance.chat_ctx, "messages", None)) else getattr(agent_instance.chat_ctx, "messages", [])
+
         asyncio.create_task(
             analytics.analyze_and_save_call(
                 phone_number="inbound_caller",
@@ -683,6 +756,7 @@ async def entrypoint(ctx: agents.JobContext):
         is_final = getattr(event, 'is_final', True)
         if is_final and text:
             logger.info(f"[TRANSCRIPT] ▶ USER : {text.strip()}")
+            call_transcript_messages.append({"role": "user", "content": text.strip()})
 
     @session.on("agent_state_changed")
     def _on_agent_state(event):
@@ -703,9 +777,10 @@ async def entrypoint(ctx: agents.JobContext):
             if hasattr(content, '__iter__') else str(content)
         )
         if role == 'user':
-            logger.info(f"[TRANSCRIPT] ▶ USER : {text.strip()}")
+            pass
         elif role in ('assistant', 'agent'):
             logger.info(f"[TRANSCRIPT] ◀ AGENT: {text.strip()}")
+            call_transcript_messages.append({"role": "assistant", "content": text.strip()})
 
     # Stamp workspace_id into room metadata so the super-admin panel can resolve the workspace name
     if workspace_id:

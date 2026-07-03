@@ -73,7 +73,7 @@ export default function CallLogsTable({ logs }: { logs: any[] }) {
                 const whatIsSaid = log.caller_intent || log.summary || "No details available.";
 
                 return (
-                  <React.Fragment key={log.id || idx}>
+                  <React.Fragment key={`${log.id || 'log'}-${idx}`}>
                     <tr 
                       className={`hover:bg-gray-50 dark:hover:bg-[#21262d] transition-colors group cursor-pointer ${isExpanded ? 'bg-gray-50 dark:bg-[#21262d]' : ''}`}
                       onClick={() => toggleRow(log.id || String(idx))}

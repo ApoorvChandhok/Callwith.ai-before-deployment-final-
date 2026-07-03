@@ -139,11 +139,11 @@ export default function BulkDialer() {
     const [extraColumns, setExtraColumns] = useState<string[]>([]);
     const [parseError, setParseError] = useState('');
 
-    // ── RAG state
-    const [ragFile, setRagFile] = useState<File | null>(null);
-    const [ragContent, setRagContent] = useState('');
+    // ── RAG state (supports multiple files)
+    const [ragFiles, setRagFiles] = useState<Array<{ file: File; content: string; info: { charCount: number; fileName: string; truncated?: boolean } }>>([]);
     const [ragLoading, setRagLoading] = useState(false);
-    const [ragInfo, setRagInfo] = useState<{ charCount: number; fileName: string; truncated?: boolean } | null>(null);
+    // Combined RAG content from all files (derived)
+    const ragContent = ragFiles.map(f => f.content).join('\n\n');
 
     // ── Campaign state
     const [prompt, setPrompt] = useState('');
@@ -169,8 +169,8 @@ export default function BulkDialer() {
     const [catalog, setCatalog] = useState<ProviderCatalog>(FALLBACK_CATALOG);
     const [catalogLoading, setCatalogLoading] = useState(true);
     const [liveStatus, setLiveStatus] = useState<Record<string, boolean>>({});
-    const [selectedProvider, setSelectedProvider] = useState('groq');
-    const [selectedVoice, setSelectedVoice] = useState('aravind');
+    const [selectedProvider, setSelectedProvider] = useState('google');
+    const [selectedVoice, setSelectedVoice] = useState('ishita');
     const [selectedTtsProvider, setSelectedTtsProvider] = useState('sarvam');
     const [selectedLanguage, setSelectedLanguage] = useState('en-IN');
     const [speechSpeed, setSpeechSpeed] = useState(1.0);
@@ -193,6 +193,9 @@ export default function BulkDialer() {
 
     // ── Run-again trigger (incremented by handleRunAgain to auto-resubmit)
     const [runAgainTrigger, setRunAgainTrigger] = useState(0);
+
+    // ── Prompt editor modal state
+    const [showPromptModal, setShowPromptModal] = useState(false);
 
     // ── File input keys (incremented to reset the browser file input DOM state)
     const [leadsInputKey, setLeadsInputKey] = useState(Date.now());
@@ -218,7 +221,14 @@ export default function BulkDialer() {
                 const prefs = JSON.parse(saved);
                 if (prefs.provider)    setSelectedProvider(prefs.provider);
                 if (prefs.ttsProvider) setSelectedTtsProvider(prefs.ttsProvider);
-                if (prefs.voice)       setSelectedVoice(prefs.voice);
+                if (prefs.voice) {
+                    // Validate voice is compatible with current TTS provider
+                    const validVoices = SARVAM_BULBUL_VOICES;
+                    if (prefs.ttsProvider !== 'sarvam' || validVoices.has(prefs.voice)) {
+                        setSelectedVoice(prefs.voice);
+                    }
+                    // If invalid, keep default 'ishita'
+                }
                 if (prefs.language)    setSelectedLanguage(prefs.language);
                 if (prefs.speed)       setSpeechSpeed(prefs.speed);
             }
@@ -232,7 +242,10 @@ export default function BulkDialer() {
                 if (d.prompt)    setPrompt(d.prompt);
                 if (d.greeting)  setGreeting(d.greeting);
                 if (d.agentName) setAgentName(d.agentName);
-                if (d.ragContent && d.ragInfo) { setRagContent(d.ragContent); setRagInfo(d.ragInfo); }
+                if (d.ragFiles?.length > 0) {
+                    // Restore RAG files from draft (File objects lost, but content + info preserved)
+                    setRagFiles(d.ragFiles.map((f: any) => ({ file: { name: f.info?.fileName || 'Draft file' } as File, content: f.content, info: f.info })));
+                }
                 if (d.leads?.length > 0 && d.columns?.length > 0) {
                     setLeads(d.leads);
                     setColumns(d.columns);
@@ -285,7 +298,7 @@ export default function BulkDialer() {
                         prompt, agentName, greeting,
                         ttsProvider: selectedTtsProvider, voice: selectedVoice,
                         language: selectedLanguage, llmProvider: selectedProvider,
-                        ragContent, ragFileName: ragInfo?.fileName || '',
+                        ragContent, ragFileName: ragFiles.map(f => f.info?.fileName).filter(Boolean).join(', ') || '',
                     },
                 }),
             });
@@ -315,8 +328,11 @@ export default function BulkDialer() {
         setSelectedLanguage(t.config.language || selectedLanguage);
         setSelectedProvider(t.config.llmProvider || selectedProvider);
         if (t.config.ragContent) {
-            setRagContent(t.config.ragContent);
-            setRagInfo({ charCount: t.config.ragContent.length, fileName: t.config.ragFileName || 'Loaded from template' });
+            setRagFiles([{
+                file: { name: t.config.ragFileName || 'Loaded from template' } as File,
+                content: t.config.ragContent,
+                info: { charCount: t.config.ragContent.length, fileName: t.config.ragFileName || 'Loaded from template' },
+            }]);
         }
     };
 
@@ -343,8 +359,10 @@ export default function BulkDialer() {
         if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
         draftTimerRef.current = setTimeout(() => {
             try {
+                // RAG files: only save metadata (content + info) — File objects can't be serialised
+                const ragDraft = ragFiles.map(f => ({ content: f.content, info: f.info }));
                 localStorage.setItem(DRAFT_KEY, JSON.stringify({
-                    prompt, greeting, agentName, ragContent, ragInfo,
+                    prompt, greeting, agentName, ragFiles: ragDraft,
                     leads, columns, columnMap,
                 }));
                 setDraftSaved(true);
@@ -352,7 +370,7 @@ export default function BulkDialer() {
             } catch { /* storage full or unavailable */ }
         }, 800);
         return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-    }, [prompt, greeting, agentName, ragContent, ragInfo, leads, columns, columnMap]);
+    }, [prompt, greeting, agentName, ragFiles, leads, columns, columnMap]);
 
     // ── Auto-trigger Run Again once status resets to idle
     useEffect(() => {
@@ -361,9 +379,12 @@ export default function BulkDialer() {
         }
     }, [runAgainTrigger, status]);
 
-    // ── Poll campaign results while dialing
+    // ── Poll campaign results while dialing AND after completion
+    // Calls are dispatched with a short delay but take minutes to actually finish.
+    // The Python agent writes results asynchronously on disconnect, so we must keep
+    // polling after the campaign loop ends until all results arrive.
     useEffect(() => {
-        if (status === 'dialing' && campaignId) {
+        if ((status === 'dialing' || status === 'completed') && campaignId) {
             pollingRef.current = setInterval(async () => {
                 try {
                     const res = await fetch(`/api/campaign/results?campaignId=${campaignId}`);
@@ -414,9 +435,8 @@ export default function BulkDialer() {
 
     // ── Upload RAG file
     const handleRagFile = async (file: File) => {
-        setRagFile(file);
-        setRagContent('');
-        setRagInfo(null);
+        // Prevent duplicate files
+        if (ragFiles.some(f => f.file.name === file.name && f.file.size === file.size)) return;
         setRagLoading(true);
         try {
             const formData = new FormData();
@@ -424,8 +444,7 @@ export default function BulkDialer() {
             const res = await fetch('/api/campaign/upload-rag', { method: 'POST', body: formData });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Upload failed');
-            setRagContent(data.content);
-            setRagInfo({ charCount: data.charCount, fileName: data.fileName, truncated: data.truncated });
+            setRagFiles(prev => [...prev, { file, content: data.content, info: { charCount: data.charCount, fileName: data.fileName, truncated: data.truncated } }]);
         } catch (err: any) {
             setMessage(`RAG upload failed: ${err.message}`);
             setStatus('error');
@@ -525,6 +544,7 @@ export default function BulkDialer() {
             const resolvedPrompt = prompt.replace(/\{\{lead\.(\w+)\}\}/gi, (_, key) => leadValues[key.toLowerCase()] ?? `{{lead.${key}}}`);
             const resolvedGreeting = greeting ? greeting.replace(/\{\{lead\.(\w+)\}\}/gi, (_, key) => leadValues[key.toLowerCase()] ?? `{{lead.${key}}}`) : greeting;
 
+            let dispatchOk = false;
             try {
                 const res = await fetch('/api/dispatch', {
                     method: 'POST',
@@ -554,12 +574,68 @@ export default function BulkDialer() {
                         ttsSpeed:       speechSpeed,
                     }),
                 });
-                if (res.ok) successCount++; else failCount++;
-            } catch { failCount++; }
+                // Check if redirected to /login (session expired)
+                if (res.redirected && res.url.includes('/login')) {
+                    failCount++;
+                    if (successCount === 0 && failCount === 1) {
+                        setMessage('Session expired. Please refresh the page and log in again.');
+                        setStatus('error');
+                        return;
+                    }
+                } else if (res.ok) {
+                    successCount++;
+                    dispatchOk = true;
+                } else {
+                    const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+                    const errMsg = errBody.error || `HTTP ${res.status}`;
+                    console.error(`[DISPATCH] Lead ${i + 1} (${phone}) failed:`, errMsg);
+                    failCount++;
+                    // Show first error to user so they know what's wrong
+                    if (successCount === 0 && failCount === 1) {
+                        setMessage(`Dispatch error: ${errMsg}`);
+                        setStatus('error');
+                        return;
+                    }
+                }
+            } catch (err: any) {
+                console.error(`[DISPATCH] Lead ${i + 1} (${phone}) exception:`, err);
+                failCount++;
+                if (successCount === 0 && failCount === 1) {
+                    setMessage(`Dispatch failed: ${err.message || 'Network error'}`);
+                    setStatus('error');
+                    return;
+                }
+            }
 
             setProgress(prev => ({ ...prev, current: i + 1 }));
-            // Small delay between dispatches to avoid trunk flooding
-            await new Promise(r => setTimeout(r, 1200));
+
+            // ── Wait for this call to complete before dispatching the next one ──
+            // All calls share one SIP trunk, so dispatching concurrently causes
+            // "486 Busy Here" errors. Poll campaign results until this lead has
+            // a result (Called / No Answer / Failed) or timeout after 3 minutes.
+            if (dispatchOk) {
+                const CALL_TIMEOUT_MS = 180_000; // 3 minutes max per call
+                const POLL_INTERVAL_MS = 3000;
+                const startWait = Date.now();
+                while (Date.now() - startWait < CALL_TIMEOUT_MS) {
+                    if (cancelRef.current) break;
+                    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+                    try {
+                        const pollRes = await fetch(`/api/campaign/results?campaignId=${newCampaignId}`);
+                        if (pollRes.ok) {
+                            const pollData = await pollRes.json();
+                            setCampaignResults(pollData.results || []);
+                            const myResult = (pollData.results || []).find(
+                                (r: any) => r.row_index === i
+                            );
+                            if (myResult) {
+                                // Call completed — move to the next lead
+                                break;
+                            }
+                        }
+                    } catch { /* non-fatal */ }
+                }
+            }
         }
 
         setStatus('completed');
@@ -599,14 +675,23 @@ export default function BulkDialer() {
         cancelRef.current = true;
         setStatus('idle');
         setLeadsFile(null); setColumns([]); setLeads([]); setColumnMap({ phone: '', name: '', email: '' });
-        setRagFile(null); setRagContent(''); setRagInfo(null);
+        setRagFiles([]);
         setCampaignId(''); setCampaignResults([]); setProgress({ total: 0, current: 0 }); setMessage('');
         setIsCancelled(false);
     };
 
     // ── Derived
     const ttsProviders = Object.keys(catalog.tts || {});
-    const voices: VoiceOption[] = catalog.tts[selectedTtsProvider]?.voices ?? [];
+    // ── Sarvam bulbul:v3 only voices (filter out any incompatible ones from live catalog) ──
+    const SARVAM_BULBUL_VOICES = new Set([
+        'ishita','shreya','priya','neha','pooja','simran','kavya','ritu','roopa',
+        'rahul','rohan','ratan','dev','manan','sumit','aditya','kabir','varun',
+        'aayan','ashutosh','advait','amit','shubh',
+    ]);
+    const allVoices: VoiceOption[] = catalog.tts[selectedTtsProvider]?.voices ?? [];
+    const voices: VoiceOption[] = selectedTtsProvider === 'sarvam'
+        ? allVoices.filter(v => SARVAM_BULBUL_VOICES.has(v.value))
+        : allVoices;
     const llmProviders = Object.keys(catalog.llm || {});
     const models: ModelOption[] = catalog.llm[selectedProvider]?.models ?? [];
     const isRunning = status === 'dialing';
@@ -664,8 +749,12 @@ export default function BulkDialer() {
     // ── Clear RAG knowledge base
     const handleClearRag = (e: React.MouseEvent) => {
         e.preventDefault(); e.stopPropagation();
-        setRagFile(null); setRagContent(''); setRagInfo(null);
+        setRagFiles([]);
         setRagInputKey(Date.now());
+    };
+
+    const handleRemoveRagFile = (index: number) => {
+        setRagFiles(prev => prev.filter((_, i) => i !== index));
     };
 
     // ── Run Again — reuse same config, re-dial same leads
@@ -681,8 +770,9 @@ export default function BulkDialer() {
 
     // ── Render ─────────────────────────────────────────────────────────────────
     return (
-        <div className="w-full h-full overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(99,102,241,0.2) transparent' }}>
-            <div className="max-w-5xl mx-auto p-6 space-y-6">
+        <div className="w-full h-full flex flex-col">
+            <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(99,102,241,0.2) transparent' }}>
+            <div className="p-6 space-y-5 pb-4">
 
                 {/* Header */}
                 <div className="flex items-center justify-between pb-4 border-b border-[#30363d]">
@@ -779,6 +869,95 @@ export default function BulkDialer() {
                         </div>
                     )}
 
+                    {/* ── Prompt Editor Modal */}
+                    {showPromptModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                            <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+                                {/* Modal Header */}
+                                <div className="px-5 py-4 border-b border-[#30363d] flex items-center justify-between flex-shrink-0">
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-[#e6edf3]">Edit System Prompt</h3>
+                                        <p className="text-[10px] text-[#8b949e] mt-0.5">Define the agent's full persona and campaign goal</p>
+                                    </div>
+                                    <button type="button" onClick={() => setShowPromptModal(false)}
+                                        className="p-1.5 rounded-lg text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors">
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                {/* Modal Body */}
+                                <div className="flex-1 overflow-y-auto p-5 space-y-4" style={{ scrollbarWidth: 'thin' }}>
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider mb-1">System Prompt *</label>
+                                        <textarea
+                                            ref={promptTextareaRef}
+                                            value={prompt} onChange={e => setPrompt(e.target.value)} rows={10}
+                                            onFocus={() => setLastFocusedField('prompt')}
+                                            placeholder="Define the agent's full persona and campaign goal. Use {{lead.name}}, {{lead.city}}, {{lead.budget}} etc. to personalise per lead."
+                                            className="w-full px-3 py-2 text-sm rounded-lg border border-[#30363d] bg-[#0d1117] text-[#e6edf3] placeholder-[#484f58] focus:outline-none focus:ring-1 focus:ring-[#3fb950]/50 resize-none font-mono" />
+                                    </div>
+
+                                    {/* Dynamic Entities Panel */}
+                                    {columns.length > 0 && (
+                                        <div className="p-3 rounded-lg bg-[#0d1117] border border-[#30363d]/60">
+                                            <p className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                                Dynamic Entities
+                                                <span className="normal-case font-normal text-[#484f58]">
+                                                    — click to insert into <span className="text-[#3fb950]">{lastFocusedField === 'greeting' ? 'greeting ↑' : 'prompt ↓'}</span>
+                                                </span>
+                                            </p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {columns.map(col => (
+                                                    <div key={col}
+                                                        draggable
+                                                        onDragStart={(e) => {
+                                                            e.dataTransfer.setData('text/plain', `{{lead.${col}}}`);
+                                                            e.dataTransfer.effectAllowed = 'copy';
+                                                        }}
+                                                        onClick={() => handleInsertTag(col)}
+                                                        className="px-2 py-1 rounded bg-[#161b22] border border-[#30363d] hover:border-[#3fb950]/50 hover:bg-[#3fb950]/10 text-xs text-[#c9d1d9] font-mono cursor-pointer shadow-sm transition-colors flex items-center gap-1.5 group"
+                                                    >
+                                                        <span className="text-[#3fb950] opacity-60 group-hover:opacity-100">{"{{"}</span>
+                                                        {col}
+                                                        <span className="text-[#3fb950] opacity-60 group-hover:opacity-100">{"}}"}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Live Preview Panel */}
+                                    {promptPreview && (
+                                        <div className="rounded-lg border border-[#30363d] overflow-hidden">
+                                            <div className="px-3 py-1.5 bg-[#161b22] border-b border-[#30363d] flex justify-between items-center">
+                                                <span className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider">Live Preview</span>
+                                                <span className="text-[10px] text-[#484f58]">Row 1 of {leads.length}</span>
+                                            </div>
+                                            <div className="p-3 bg-[#0d1117] text-sm text-[#c9d1d9] whitespace-pre-wrap font-mono leading-relaxed">
+                                                {promptPreview.split(/(\{\{lead\.[^}]+\}\})/gi).map((part, i) => {
+                                                    const isUnresolvedTag = part.startsWith('{{lead.') && part.endsWith('}}');
+                                                    if (isUnresolvedTag) {
+                                                        return <span key={i} className="text-[#f85149] bg-[#f85149]/10 px-1 rounded">{part} (not found)</span>;
+                                                    }
+                                                    return <span key={i}>{part}</span>;
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Modal Footer */}
+                                <div className="px-5 py-3 border-t border-[#30363d] flex justify-end flex-shrink-0">
+                                    <button type="button" onClick={() => setShowPromptModal(false)}
+                                        className="px-4 py-1.5 text-xs font-semibold text-[#e6edf3] bg-[#3fb950] hover:bg-[#2ea043] rounded-lg transition-colors">
+                                        Done
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Steps 1 & 2 side-by-side */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
                     {/* ── STEP 1: Upload Leads File */}
                     <div className="rounded-xl border border-[#30363d] bg-[#161b22] overflow-hidden">
                         <div className="px-4 py-3 border-b border-[#30363d] flex items-center justify-between">
@@ -865,54 +1044,75 @@ export default function BulkDialer() {
                         </div>
                     </div>
 
-                    {/* ── STEP 2: RAG Knowledge Base */}
+                    {/* ── STEP 2: RAG Knowledge Base (Multi-file) */}
                     <div className="rounded-xl border border-[#30363d] bg-[#161b22] overflow-hidden">
                         <div className="px-4 py-3 border-b border-[#30363d] flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <Brain className="w-4 h-4 text-[#a371f7]" />
                                 <span className="text-sm font-semibold text-[#e6edf3]">Step 2 — Knowledge Base</span>
-                                <span className="ml-2 text-[10px] text-[#8b949e]">Optional — PDF, DOCX, TXT</span>
+                                <span className="ml-2 text-[10px] text-[#8b949e]">Optional — multiple files supported</span>
                             </div>
-                            <a href="/sample_knowledge_base.txt" download className="text-xs text-[#a371f7] hover:underline flex items-center gap-1">
-                                <Download className="w-3 h-3" /> Sample RAG
-                            </a>
-                        </div>
-                        <div className="p-4">
-                            <div className="relative">
-                                <label className={`flex flex-col items-center justify-center w-full h-20 rounded-lg border-2 border-dashed cursor-pointer transition-colors
-                                    ${ragInfo ? 'border-[#a371f7]/50 bg-[#a371f7]/5' : 'border-[#30363d] hover:border-[#8b949e] hover:bg-[#21262d]'}`}>
-                                    <input key={ragInputKey} type="file" accept=".pdf,.docx,.doc,.txt,.csv,.md" className="hidden"
-                                        onChange={e => { if (e.target.files?.[0]) handleRagFile(e.target.files[0]); }} />
-                                    {ragLoading ? (
-                                        <div className="flex items-center gap-2">
-                                            <Loader2 className="w-4 h-4 text-[#a371f7] animate-spin" />
-                                            <span className="text-xs text-[#8b949e]">Processing file…</span>
-                                        </div>
-                                    ) : ragInfo ? (
-                                        <div className="flex flex-col items-center gap-0.5">
-                                            <CheckCircle2 className="w-5 h-5 text-[#a371f7]" />
-                                            <span className="text-xs font-medium text-[#e6edf3]">{ragInfo.fileName}</span>
-                                            <span className="text-[10px] text-[#8b949e]">
-                                                {ragInfo.charCount.toLocaleString()} characters loaded
-                                                {ragInfo.truncated && ' (truncated to fit)'}
-                                            </span>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center gap-1">
-                                            <Brain className="w-5 h-5 text-[#8b949e]" />
-                                            <span className="text-xs text-[#8b949e]">Attach company/product knowledge base (PDF, DOCX, TXT)</span>
-                                        </div>
-                                    )}
-                                </label>
-                                {ragInfo && !ragLoading && (
-                                    <button type="button" onClick={handleClearRag} title="Remove knowledge base"
-                                        className="absolute top-2 right-2 p-1 rounded-full bg-[#21262d] border border-[#30363d] text-[#8b949e] hover:text-[#f85149] hover:border-[#f85149]/40 transition-colors z-10">
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
+                            <div className="flex items-center gap-2">
+                                {ragFiles.length > 0 && (
+                                    <span className="text-[10px] text-[#8b949e]">
+                                        {ragFiles.length} file{ragFiles.length > 1 ? 's' : ''} · {ragContent.length.toLocaleString()} chars
+                                    </span>
                                 )}
+                                <a href="/sample_knowledge_base.txt" download className="text-xs text-[#a371f7] hover:underline flex items-center gap-1">
+                                    <Download className="w-3 h-3" /> Sample
+                                </a>
                             </div>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            {/* Dropzone for adding files */}
+                            <label className="flex flex-col items-center justify-center w-full h-16 rounded-lg border-2 border-dashed cursor-pointer transition-colors
+                                border-[#30363d] hover:border-[#a371f7]/50 hover:bg-[#a371f7]/5">
+                                <input key={ragInputKey} type="file" accept=".pdf,.docx,.doc,.txt,.csv,.md" className="hidden" multiple
+                                    onChange={e => { if (e.target.files) { Array.from(e.target.files).forEach(f => handleRagFile(f)); } }} />
+                                {ragLoading ? (
+                                    <div className="flex items-center gap-2">
+                                        <Loader2 className="w-4 h-4 text-[#a371f7] animate-spin" />
+                                        <span className="text-xs text-[#8b949e]">Processing file…</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <Brain className="w-4 h-4 text-[#8b949e]" />
+                                        <span className="text-xs text-[#8b949e]">{ragFiles.length > 0 ? 'Add another file' : 'Click to attach knowledge base files'}</span>
+                                    </div>
+                                )}
+                            </label>
+
+                            {/* Uploaded files list */}
+                            {ragFiles.length > 0 && (
+                                <div className="space-y-1.5">
+                                    {ragFiles.map((f, i) => (
+                                        <div key={`${f.info.fileName}-${i}`} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0d1117] border border-[#30363d]">
+                                            <CheckCircle2 className="w-4 h-4 text-[#a371f7] flex-shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-medium text-[#e6edf3] truncate">{f.info.fileName}</div>
+                                                <div className="text-[10px] text-[#8b949e]">
+                                                    {f.info.charCount.toLocaleString()} chars{f.info.truncated && ' (truncated)'}
+                                                </div>
+                                            </div>
+                                            <button type="button" onClick={() => handleRemoveRagFile(i)} title="Remove this file"
+                                                className="p-1 rounded text-[#8b949e] hover:text-[#f85149] transition-colors flex-shrink-0">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <button type="button" onClick={handleClearRag}
+                                        className="text-[10px] text-[#f85149] hover:underline mt-1">
+                                        Clear all files
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
+
+                    </div>{/* end Steps 1 & 2 grid */}
+
+                    {/* Steps 3 & 4 side-by-side */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                     {/* ── STEP 3: Agent Persona & Campaign Prompt */}
                     <div className="rounded-xl border border-[#30363d] bg-[#161b22] overflow-hidden">
@@ -950,67 +1150,23 @@ export default function BulkDialer() {
                                     )}
                                 </div>
                             </div>
-                            {/* System Prompt Builder */}
+                            {/* System Prompt — compact summary with edit button */}
                             <div>
-                                <label className="block text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider mb-1">System Prompt / Campaign Instructions *</label>
-                                <textarea
-                                    ref={promptTextareaRef}
-                                    value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
-                                    onFocus={() => setLastFocusedField('prompt')}
-                                    placeholder="Define the agent's full persona and campaign goal. Use {{lead.name}}, {{lead.city}}, {{lead.budget}} etc. to personalise per lead."
-                                    className="w-full px-3 py-2 text-sm rounded-lg border border-[#30363d] bg-[#0d1117] text-[#e6edf3] placeholder-[#484f58] focus:outline-none focus:ring-1 focus:ring-[#3fb950]/50 resize-none" />
-                                
-                                {/* Dynamic Entities Panel */}
-                                {columns.length > 0 && (
-                                    <div className="mt-3 p-3 rounded-lg bg-[#0d1117] border border-[#30363d]/60">
-                                        <p className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                                            Dynamic Entities
-                                            <span className="normal-case font-normal text-[#484f58]">
-                                                — click to insert into <span className="text-[#3fb950]">{lastFocusedField === 'greeting' ? 'greeting ↑' : 'prompt ↓'}</span>
-                                            </span>
-                                        </p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {columns.map(col => (
-                                                <div key={col}
-                                                    draggable
-                                                    onDragStart={(e) => {
-                                                        e.dataTransfer.setData('text/plain', `{{lead.${col}}}`);
-                                                        e.dataTransfer.effectAllowed = 'copy';
-                                                    }}
-                                                    onClick={() => handleInsertTag(col)}
-                                                    className="px-2 py-1 rounded bg-[#161b22] border border-[#30363d] hover:border-[#3fb950]/50 hover:bg-[#3fb950]/10 text-xs text-[#c9d1d9] font-mono cursor-pointer shadow-sm transition-colors flex items-center gap-1.5 group"
-                                                >
-                                                    <span className="text-[#3fb950] opacity-60 group-hover:opacity-100">{"{{"}</span>
-                                                    {col}
-                                                    <span className="text-[#3fb950] opacity-60 group-hover:opacity-100">{"}}"}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Live Preview Panel */}
-                                {promptPreview && (
-                                    <div className="mt-3 rounded-lg border border-[#30363d] overflow-hidden">
-                                        <div className="px-3 py-1.5 bg-[#161b22] border-b border-[#30363d] flex justify-between items-center">
-                                            <span className="text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider">Live Preview</span>
-                                            <span className="text-[10px] text-[#484f58]">Row 1 of {leads.length}</span>
-                                        </div>
-                                        <div className="p-3 bg-[#0d1117] text-sm text-[#c9d1d9] whitespace-pre-wrap font-mono leading-relaxed">
-                                            {/* Render promptPreview with highlighted replacements */}
-                                            {promptPreview.split(/(\{\{lead\.[^}]+\}\})/gi).map((part, i) => {
-                                                const isUnresolvedTag = part.startsWith('{{lead.') && part.endsWith('}}');
-                                                if (isUnresolvedTag) {
-                                                    return <span key={i} className="text-[#f85149] bg-[#f85149]/10 px-1 rounded">{part} (not found)</span>;
-                                                }
-                                                // We want to highlight the resolved dynamic values. 
-                                                // This is tricky without a complex parser, so we'll just show the final text.
-                                                // Actually, a simpler way is to just display promptPreview as plain text.
-                                                // Let's just output the plain text for now.
-                                                return <span key={i}>{part}</span>;
-                                            })}
-                                        </div>
-                                    </div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider">System Prompt / Campaign Instructions *</label>
+                                    <span className="text-[10px] text-[#484f58] font-mono">{prompt.length} chars</span>
+                                </div>
+                                {prompt ? (
+                                    <button type="button" onClick={() => setShowPromptModal(true)}
+                                        className="w-full text-left px-3 py-2 rounded-lg border border-[#30363d] bg-[#0d1117] hover:border-[#3fb950]/40 transition-colors group">
+                                        <p className="text-xs text-[#c9d1d9] line-clamp-2 leading-relaxed">{prompt}</p>
+                                        <p className="text-[10px] text-[#3fb950] mt-1 group-hover:underline">Click to edit full prompt &amp; preview →</p>
+                                    </button>
+                                ) : (
+                                    <button type="button" onClick={() => setShowPromptModal(true)}
+                                        className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-[#30363d] hover:border-[#3fb950]/50 hover:bg-[#3fb950]/5 transition-colors text-left">
+                                        <p className="text-xs text-[#484f58]">Click to define the agent's persona and campaign goal…</p>
+                                    </button>
                                 )}
                             </div>
                         </div>
@@ -1089,6 +1245,8 @@ export default function BulkDialer() {
                         </div>
                     </div>
 
+                    </div>{/* end Steps 3 & 4 grid */}
+
                     {/* ── Error message */}
                     {status === 'error' && message && (
                         <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[#f85149]/10 border border-[#f85149]/30 text-[#f85149] text-sm">
@@ -1101,41 +1259,6 @@ export default function BulkDialer() {
                     {draftSaved && (
                         <p className="text-center text-[10px] text-[#3fb950] animate-pulse">✓ Draft auto-saved</p>
                     )}
-
-                    {/* ── Start button (idle / error state) */}
-                    {!isRunning && status !== 'completed' && (
-                        <button type="submit" disabled={leads.length === 0 || !columnMap.phone || ragLoading}
-                            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white
-                                bg-gradient-to-r from-[#a371f7] to-[#2f81f7]
-                                hover:from-[#9461e7] hover:to-[#1f71e7]
-                                disabled:opacity-40 disabled:cursor-not-allowed
-                                shadow-lg shadow-[#a371f7]/20 transition-all active:scale-[0.99]">
-                            <Play className="w-4 h-4" />
-                            Start Campaign ({leads.filter(l => l[columnMap.phone]?.trim().length >= 10).length} leads)
-                        </button>
-                    )}
-
-                    {/* ── Run Again / New Campaign buttons (completed state) */}
-                    {!isRunning && status === 'completed' && (
-                        <div className="flex gap-3">
-                            <button type="button" onClick={handleRunAgain}
-                                disabled={leads.length === 0 || !columnMap.phone}
-                                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white
-                                    bg-gradient-to-r from-[#3fb950] to-[#2f81f7]
-                                    hover:from-[#2fa040] hover:to-[#1f71e7]
-                                    disabled:opacity-40 disabled:cursor-not-allowed
-                                    shadow-lg shadow-[#3fb950]/20 transition-all active:scale-[0.99]">
-                                <RefreshCw className="w-4 h-4" />
-                                Run Again ({leads.filter(l => l[columnMap.phone]?.trim().length >= 10).length} leads)
-                            </button>
-                            <button type="button" onClick={handleReset}
-                                className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-bold
-                                    text-[#f85149] border border-[#f85149]/30 hover:bg-[#f85149]/10 transition-all">
-                                <X className="w-4 h-4" />
-                                New
-                            </button>
-                        </div>
-                    )}
                 </form>
 
                 {/* ── Progress bar */}
@@ -1145,13 +1268,22 @@ export default function BulkDialer() {
                             <span className="text-sm font-semibold text-[#e6edf3]">
                                 {isRunning ? `Dialing… ${progress.current} of ${progress.total}` : `Completed — ${progress.current} of ${progress.total} dispatched`}
                             </span>
-                            {status === 'completed' && (
-                                <button onClick={handleDownload}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#3fb950] hover:bg-[#3fb950]/90 transition-colors">
-                                    <Download className="w-3.5 h-3.5" />
-                                    Download Report
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2">
+                                {isRunning && (
+                                    <button onClick={() => { cancelRef.current = true; }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#f85149] hover:bg-[#f85149]/90 transition-colors animate-pulse">
+                                        <StopCircle className="w-3.5 h-3.5" />
+                                        Stop Campaign
+                                    </button>
+                                )}
+                                {status === 'completed' && (
+                                    <button onClick={handleDownload}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#3fb950] hover:bg-[#3fb950]/90 transition-colors">
+                                        <Download className="w-3.5 h-3.5" />
+                                        Download Report
+                                    </button>
+                                )}
+                            </div>
                         </div>
                         <div className="w-full h-2 bg-[#21262d] rounded-full overflow-hidden">
                             <div className="h-full bg-gradient-to-r from-[#a371f7] to-[#2f81f7] rounded-full transition-all duration-500"
@@ -1213,7 +1345,57 @@ export default function BulkDialer() {
                     </div>
                 )}
 
+            </div>{/* end scrollable content */}
             </div>
+
+            {/* ── Sticky Bottom Action Bar */}
+            <div className="flex-shrink-0 border-t border-[#30363d] bg-[#0d1117]/95 backdrop-blur-md px-6 py-3">
+                {/* Error message */}
+                {status === 'error' && message && (
+                    <div className="flex items-center gap-2 px-4 py-2 mb-2 rounded-lg bg-[#f85149]/10 border border-[#f85149]/30 text-[#f85149] text-xs">
+                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                        {message}
+                    </div>
+                )}
+                {/* Draft auto-save */}
+                {draftSaved && (
+                    <p className="text-center text-[10px] text-[#3fb950] animate-pulse mb-2">✓ Draft auto-saved</p>
+                )}
+                {/* Start button (idle / error state) */}
+                {!isRunning && status !== 'completed' && (
+                    <button type="submit" form="bulk-campaign-form" disabled={leads.length === 0 || !columnMap.phone || ragLoading}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white
+                            bg-gradient-to-r from-[#a371f7] to-[#2f81f7]
+                            hover:from-[#9461e7] hover:to-[#1f71e7]
+                            disabled:opacity-40 disabled:cursor-not-allowed
+                            shadow-lg shadow-[#a371f7]/20 transition-all active:scale-[0.99]">
+                        <Play className="w-4 h-4" />
+                        Start Campaign ({leads.filter(l => l[columnMap.phone]?.trim().length >= 10).length} leads)
+                    </button>
+                )}
+                {/* Run Again / New Campaign buttons (completed state) */}
+                {!isRunning && status === 'completed' && (
+                    <div className="flex gap-3">
+                        <button type="button" onClick={handleRunAgain}
+                            disabled={leads.length === 0 || !columnMap.phone}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white
+                                bg-gradient-to-r from-[#3fb950] to-[#2f81f7]
+                                hover:from-[#2fa040] hover:to-[#1f71e7]
+                                disabled:opacity-40 disabled:cursor-not-allowed
+                                shadow-lg shadow-[#3fb950]/20 transition-all active:scale-[0.99]">
+                            <RefreshCw className="w-4 h-4" />
+                            Run Again ({leads.filter(l => l[columnMap.phone]?.trim().length >= 10).length} leads)
+                        </button>
+                        <button type="button" onClick={handleReset}
+                            className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold
+                                text-[#f85149] border border-[#f85149]/30 hover:bg-[#f85149]/10 transition-all">
+                            <X className="w-4 h-4" />
+                            New
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
         </div>
     );
 }

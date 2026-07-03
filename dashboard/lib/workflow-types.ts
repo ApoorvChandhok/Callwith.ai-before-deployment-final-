@@ -336,6 +336,11 @@ export interface WorkflowNode {
   notes?: string;
   disabled?: boolean;
   pinnedData?: any; // for data pinning
+  // Error handling (n8n-pattern)
+  continueOnFail?: boolean;
+  retryOnFail?: boolean;
+  retryCount?: number;
+  retryIntervalMs?: number;
 }
 
 export interface WorkflowEdge {

@@ -9,11 +9,21 @@ export default function DialerPage() {
   const [activeTab, setActiveTab] = useState<'manual' | 'bulk'>('manual');
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto h-full flex flex-col">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-5 h-full flex flex-col">
+      {/* Header with integrated info */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-[#e6edf3]">Outbound Campaigns</h2>
-          <p className="text-gray-500 dark:text-[#8b949e]">Configure and deploy voice agents to your users.</p>
+          <p className="text-gray-500 dark:text-[#8b949e] text-sm">
+            {activeTab === 'manual'
+              ? "Deploy a single voice agent immediately. Enter the recipient's phone number and provide specific context that the agent should know before dialing."
+              : "Upload a CSV file to deploy agents in bulk. The CSV must contain a 'phone' column. The agent will dial each number sequentially."}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-[#8b949e]">
+          <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-[#2ea043]" />Ultra-low latency</span>
+          <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-[#2ea043]" />Noise cancellation</span>
+          <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-[#2ea043]" />Sentiment analysis</span>
         </div>
       </div>
 
@@ -42,43 +52,8 @@ export default function DialerPage() {
         </button>
       </div>
 
-      <div className="bg-white/80 dark:bg-[#161b22]/60 backdrop-blur-md border border-gray-200/50 dark:border-white/8 rounded-2xl shadow-sm flex-1 overflow-hidden flex flex-col md:flex-row">
-        {/* Left Side: Form */}
-        <div className="flex-1 border-r border-gray-200/50 dark:border-white/5">
-          {activeTab === 'manual' ? <CallDispatcher /> : <BulkDialer />}
-        </div>
-
-        {/* Right Side: Information / Preview */}
-        <div className="w-full md:w-[400px] bg-gray-50 dark:bg-[#0d1117]/50 p-8 hidden md:block">
-          <div className="sticky top-8 space-y-6">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-[#e6edf3] uppercase tracking-wider mb-2">Campaign Settings</h3>
-              <p className="text-sm text-gray-500 dark:text-[#8b949e] leading-relaxed">
-                {activeTab === 'manual'
-                  ? "Deploy a single voice agent immediately. Enter the recipient's phone number and provide specific context that the agent should know before dialing."
-                  : "Upload a CSV file to deploy agents in bulk. The CSV must contain a 'phone' column. The agent will dial each number sequentially."}
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-[#e6edf3] uppercase tracking-wider">Voice Capabilities</h3>
-              <ul className="space-y-2 text-sm text-gray-500 dark:text-[#8b949e]">
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-[#2ea043]"></div>
-                  Ultra-low latency inference
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-[#2ea043]"></div>
-                  Background noise cancellation
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-[#2ea043]"></div>
-                  Sentiment analysis &amp; logging
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
+      <div className="bg-white/80 dark:bg-[#161b22]/60 backdrop-blur-md border border-gray-200/50 dark:border-white/8 rounded-2xl shadow-sm flex-1 overflow-hidden">
+        {activeTab === 'manual' ? <CallDispatcher /> : <BulkDialer />}
       </div>
     </div>
   );
