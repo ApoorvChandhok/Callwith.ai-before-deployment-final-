@@ -175,15 +175,30 @@ async function buildNodeOutput(
         };
         break;
 
-      case "loop_items":
+      case "loop_items": {
+        // n8n-style Loop Over Items: returns one item (or batch) per iteration
+        // Batch size defaults to 1 (one item per iteration)
+        const allItems = Array.isArray(input.items) ? input.items
+          : Array.isArray(input.leads) ? input.leads
+          : Array.isArray(input) ? input
+          : [];
+        const batchSize = resolvedConfig.batchSize || 1;
+        const batch = allItems.slice(0, batchSize);
+        const remaining = allItems.slice(batchSize);
         output = {
-          loopMode: resolvedConfig.mode || "items",
+          batch,
+          items: batch,
+          currentItem: batch[0] || input,
           currentIndex: 0,
-          totalItems: Array.isArray(input.items) ? input.items.length : 1,
-          currentItem: Array.isArray(input.items) ? input.items[0] : input,
-          ...input
+          totalItems: allItems.length,
+          itemsLeft: remaining.length,
+          hasMore: remaining.length > 0,
+          allItems,
+          ...input,
+          item: batch[0] || input,
         };
         break;
+      }
 
       case "code_node": {
         const codeResult = executeCodeNode(resolvedConfig.code || "return $input.all();", input);
@@ -688,12 +703,18 @@ function BuilderContent() {
     const nodeOutputMap: Record<string, any> = {}; // for $node["label"] references
     const queue: { nodeId: string; parentOutput?: any }[] = [{ nodeId: startNode.id, parentOutput: { lead: { ...DEMO_LEAD } } }];
     const visited = new Set<string>();
+    // Track loop state for n8n-style loop: loop_items re-queues itself with remaining items
+    const loopState: Record<string, { remainingItems: any[]; currentIndex: number; allItems: any[] }> = {};
     let overallStatus: "success" | "error" = "success";
+    let iterations = 0;
+    const MAX_ITERATIONS = 500; // safety limit
 
     try {
-      while (queue.length > 0) {
+      while (queue.length > 0 && iterations < MAX_ITERATIONS) {
+        iterations++;
         const { nodeId, parentOutput } = queue.shift()!;
-        if (visited.has(nodeId)) continue;
+        // Allow loop_nodes to be visited multiple times
+        if (visited.has(nodeId) && !nodeId.includes("loop_items")) continue;
         visited.add(nodeId);
 
         const node = nodes.find((n) => n.id === nodeId);
@@ -749,6 +770,29 @@ function BuilderContent() {
           const routedPort = output.outputIndex === -1 ? "fallback" : `output_${output.outputIndex}`;
           const matchedEdges = outgoingEdges.filter((e) => e.sourcePort === routedPort || (!e.sourcePort && output.outputIndex === -1));
           matchedEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
+        } else if (node.type === "loop_items") {
+          // n8n-style loop: if there are remaining items, re-queue the loop node
+          // The loop output goes to the next node (which processes one item at a time)
+          // After processing, the loop node needs to be called again for the next item
+          const allItems = output.allItems || [];
+          const batchSize = output.batch?.length || 1;
+          const remaining = output.allItems ? output.allItems.slice(batchSize) : [];
+
+          if (remaining.length > 0) {
+            // Loop: send current item via "loop" port, then re-queue loop node
+            const loopEdges = outgoingEdges.filter((e) => e.sourcePort === "loop");
+            loopEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
+
+            // Re-queue the loop node itself with remaining items (this is the key n8n pattern)
+            queue.push({
+              nodeId: node.id,
+              parentOutput: { ...input, items: remaining, leads: remaining, allItems: remaining, item: remaining[0] }
+            });
+          } else {
+            // Done: send all processed items via "done" port
+            const doneEdges = outgoingEdges.filter((e) => e.sourcePort === "done");
+            doneEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
+          }
         } else {
           outgoingEdges.forEach((e) => queue.push({ nodeId: e.targetId, parentOutput: output }));
         }
