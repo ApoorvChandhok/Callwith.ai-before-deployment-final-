@@ -3,7 +3,26 @@
 ---
 ## Changelog
 
+### 2026-07-09 - Call Logs Page + Auto-CRM Lead Creation
+
+* **[NEW] `/logs` page** (`app/(dashboard)/logs/page.tsx`) — paginated call log table with search, direction/sentiment filters, inline CRM button, click-to-detail.
+* **[NEW] `/logs/[id]` page** (`app/(dashboard)/logs/[id]/page.tsx`) — single call detail: transcript chat bubbles, AI analysis, recording player, stats, Save to CRM button.
+* **[NEW] `/api/leads/upsert-from-call`** — internal POST endpoint (no auth cookie needed, bypassed in middleware). Smart dedup: increments `call_count` + appends note for existing leads; creates new lead with correct `source` for new numbers.
+* **[MODIFY] `analytics.py`** — fires CRM upsert to `DASHBOARD_URL/api/leads/upsert-from-call` after every call (non-fatal, try/except wrapped).
+* **[MODIFY] `middleware.ts`** — added `api/leads/upsert-from-call` to bypass list.
+* **Note:** Auto-CRM requires `business_id` resolvable via existing lead lookup by phone. First call from a new number will only create a CRM entry if `business_id` can be resolved; the CRM button on the dashboard UI always works because the user's session provides `business_id`.
+
+### 2026-07-09 - OpenRouter Integration (Groq-pinned LLM)
+
+* **New provider `openrouter`:** Added `openrouter` branch to `_build_llm()` in both `agent_outbound.py` and `agent_inbound.py`.
+* **Endpoint:** `https://openrouter.ai/api/v1` using `openai.LLM` with `default_headers` to pin routing to Groq (`X-OR-Provider-Order: groq`, `X-OR-Allow-Fallbacks: true`).
+* **Model:** `meta-llama/llama-3.1-8b-instruct` (configurable via `OPENROUTER_MODEL` env var).
+* **Fallback chain:** If Groq is unavailable, OpenRouter auto-routes to next fast provider. Last-resort agent fallback also uses OpenRouter before direct Groq.
+* **Env vars added to `.env`:** `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `LLM_PROVIDER=openrouter`.
+* **Direct Groq keys preserved** as backup — no removal of existing `GROQ_API_KEY`.
+
 ### 2026-07-03 - Fix loop_items iterating CSV rows
+
 * **Root cause:** `ctx.$json` was rebuilt from merged `$nodes` outputs on every node visit in `workflow-executor.ts`. This overwrote `ctx.$json.item` that `loop_items` had just set, so expressions like `{{$json.item.phone}}` always resolved to `undefined` inside loop body nodes.
 * **Fix 1 (restore item):** After rebuilding `ctx.$json`, re-inject the active loop item from `ctx.$loopState` so child nodes always see `$json.item` pointing to the current CSV row.
 * **Fix 2 (operator precedence):** Fixed JS operator precedence bug in the string-based JSON array parse check.

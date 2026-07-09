@@ -180,13 +180,14 @@ export const FALLBACK_CATALOG: ProviderCatalog = {
         { value: "deepseek-r1-distill-llama-70b", label: "DeepSeek R1 Distill 70B" },
       ],
     },
-    openai: {
-      label: "OpenAI",
+    openrouter: {
+      label: "OpenRouter (Groq-pinned)",
       models: [
-        { value: "gpt-4o", label: "GPT-4o (Recommended)" },
-        { value: "gpt-4o-mini", label: "GPT-4o Mini (Fast)" },
-        { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-        { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+        { value: "meta-llama/llama-3.1-8b-instruct", label: "Llama 3.1 8B Instruct (Fast) ⭐" },
+        { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct" },
+        { value: "meta-llama/llama-3.1-70b-instruct", label: "Llama 3.1 70B Instruct" },
+        { value: "mistralai/mistral-7b-instruct", label: "Mistral 7B Instruct (Fast)" },
+        { value: "google/gemma-2-9b-it", label: "Gemma 2 9B" },
       ],
     },
     google: {

@@ -97,7 +97,7 @@ export async function POST(request: Request) {
         const metadata = JSON.stringify({
             phone_number:     phoneNumber,
             user_prompt:      prompt || systemPrompt || "",  // pass system prompt as user_prompt too, so Python agent uses it directly
-            model_provider:   modelProvider || "openai",
+            model_provider:   modelProvider || "openrouter",
             voice_id:         voice || "alloy",
             tts_provider:     body.ttsProvider,
             tts_language:     body.ttsLanguage,

@@ -15,6 +15,6 @@ export const config = {
      * - /api/tools/* (tool gateway — called by voice agent without session cookies)
      * - /api/auth/*  (OAuth callbacks)
      */
-    '/((?!_next/static|_next/image|favicon\\.ico|api/tools/|api/auth/|api/real-estate/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|api/tools/|api/workflow/|api/auth/|api/real-estate/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
