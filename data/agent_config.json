@@ -15,7 +15,7 @@
     "llm_provider": "google",
     "llm_model": "gemini-2.5-flash",
     "llm_temperature": 0.95,
-    "transfer_number": "+91 9911990546",
+    "transfer_number": "+91 ",
     "automatic_handoff": true,
     "handoff_conditions": "if the human get frustrated.",
     "resources": [],

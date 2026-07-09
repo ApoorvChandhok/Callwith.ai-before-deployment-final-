@@ -71,8 +71,9 @@ async def analyze_and_save_call(
             
         full_transcript = "\n".join(transcript)
         
-        # Detect real estate campaigns by campaign ID prefix
+        # Detect campaign type by campaign ID prefix
         is_real_estate = campaign_id.startswith("re_")
+        is_car_dealership = campaign_id.startswith("cd_")
 
         # Skip analysis if no real conversation happened
         if not full_transcript.strip():
@@ -92,6 +93,19 @@ async def analyze_and_save_call(
                     "- \"email_status\": Whether a brochure was successfully sent — use 'sent', 'failed', or 'not_requested'.\n"
                     "- \"property_requirements\": A JSON object with keys 'budget', 'location', 'property_type', 'bedrooms' based on what the caller mentioned. If not mentioned, use null for each.\n"
                     "- \"brochure_sent\": The name of the specific project brochure that was emailed to the caller, or empty string if none.\n\n"
+                    f"Transcript:\n{full_transcript}"
+                )
+            elif is_car_dealership:
+                prompt = (
+                    "Analyze the following car dealership sales call transcript. Provide a JSON response with exactly these keys:\n"
+                    "- \"summary\": A 1-2 sentence summary of the call.\n"
+                    "- \"sentiment\": Positive, Neutral, or Negative.\n"
+                    "- \"caller_intent\": What the caller was asking about or wanted.\n"
+                    "- \"user_info\": A JSON object with 'name', 'phone', 'email' if mentioned.\n"
+                    "- \"interested_cars\": An array of car models the caller showed interest in. If none, use [].\n"
+                    "- \"test_drive_booked\": true if caller agreed to book a test drive, false otherwise.\n"
+                    "- \"car_requirements\": A JSON object with 'budget', 'car_type' (SUV/sedan/hatchback), 'brand', 'new_or_used' based on what caller mentioned. If not mentioned, use null for each.\n"
+                    "- \"call_outcome\": One of 'test_drive_booked', 'interested', 'not_interested', 'callback_requested', 'no_answer'.\n\n"
                     f"Transcript:\n{full_transcript}"
                 )
             else:

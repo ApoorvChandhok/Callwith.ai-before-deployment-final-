@@ -67,12 +67,12 @@ from workspace_config_loader import load_workspace_config, WorkspaceAgentConfig
 logger.info("[INBOUND] Agent initialized")
 
 # Pre-load VAD model at startup (avoids cold-load delay on first call)
-# Tuned for telephony: fast onset detection + tighter silence window
+# Tuned for telephony: fast onset detection + balanced silence window
 _VAD = silero.VAD.load(
-    min_silence_duration=0.25,    # 250ms — aggressive silence detection for fastest response
-    activation_threshold=0.35,    # Higher threshold to filter telephony line noise/static
-    min_speech_duration=0.15,     # 150ms minimum speech to register (near-instant detection)
-    sample_rate=16000,             # Match Deepgram's ingestion sample rate — no resampling overhead
+    min_silence_duration=0.40,    # 400ms — faster than 550ms, still natural
+    activation_threshold=0.40,    # Balanced threshold
+    min_speech_duration=0.20,     # 200ms — quick detection
+    sample_rate=16000,
 )
 
 
@@ -102,13 +102,13 @@ def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, v
         model    = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
         voice    = voice_override or ws_config.tts_voice or os.getenv("SARVAM_VOICE", "ishita")
         language = language_override or ws_config.tts_language or os.getenv("SARVAM_LANGUAGE", "en-IN")
+        pace = float(os.getenv("SARVAM_PACE", "1.25"))  # Faster speech (default 1.0)
         # Validate voice is compatible with bulbul:v3 — fallback to ishita if not
         if voice.lower() not in _SARVAM_VOICES:
             logger.warning(f"[TTS] Voice '{voice}' not compatible with bulbul:v3 — falling back to 'ishita'")
             voice = "ishita"
-        logger.info(f"[TTS] Sarvam -- model={model}, speaker={voice}, lang={language}")
-        # Note: Sarvam bulbul:v3 speech speed is controlled via the dashboard Speech Speed slider
-        return sarvam.TTS(model=model, speaker=voice, target_language_code=language)
+        logger.info(f"[TTS] Sarvam -- model={model}, speaker={voice}, lang={language}, pace={pace}")
+        return sarvam.TTS(model=model, speaker=voice, target_language_code=language, pace=pace)
     if provider == "deepgram":
         return deepgram.TTS(model=os.getenv("DEEPGRAM_TTS_MODEL", "aura-asteria-en"))
 
@@ -701,20 +701,13 @@ async def entrypoint(ctx: agents.JobContext):
         turn_handling=TurnHandlingOptions(
             turn_detection="vad",
             endpointing={
-                "mode": "dynamic",       # ADAPTIVE endpointing — matches each caller's pace
-                "min_delay": 0.15,       # 150ms minimum wait after silence (near-instant response)
-                "max_delay": 0.8,        # 800ms max before forcing turn close (fastest turns)
+                "min_delay": 0.35,       # 350ms — faster response
+                "max_delay": 1.5,        # 1.5s — not too slow
+                "silence_duration_ms": 400,
             },
             interruption={
-                "enabled": True,
-                "mode": "vad",           # Use VAD mode (switch to "adaptive" if on LiveKit Cloud)
-                "min_duration": 0.25,    # 250ms minimum speech to register as interruption (fastest barge-in)
-                "min_words": 1,          # Require at least 1 word before interrupting
-                "false_interruption_timeout": 1.0,  # 1s before resuming after noise (fastest recovery)
-                "resume_false_interruption": True,
-            },
-            preemptive_generation={
-                "enabled": True,         # LLM pre-generates response while user talks
+                "mode": "adaptive",      # Clear TTS buffer on user barge-in
+                "min_words": 2,          # Only interrupt if user says 2+ words
             },
         ),
     )

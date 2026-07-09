@@ -77,10 +77,10 @@ logger.info("[OUTBOUND] Agent initialized")
 
 # Pre-load VAD model at startup — tuned for telephony
 _VAD = silero.VAD.load(
-    min_silence_duration=0.25,    # 250ms — aggressive silence detection for fastest response
-    activation_threshold=0.35,    # Higher threshold to filter telephony line noise/static
-    min_speech_duration=0.15,     # 150ms minimum speech to register (near-instant detection)
-    sample_rate=16000,             # Match Deepgram's ingestion rate — no resampling overhead
+    min_silence_duration=0.30,    # 300ms — fast silence detection
+    activation_threshold=0.40,    # Balanced threshold
+    min_speech_duration=0.15,     # 150ms — very quick detection
+    sample_rate=16000,
 )
 
 
@@ -110,13 +110,13 @@ def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, v
         model    = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
         voice    = voice_override or ws_config.tts_voice or os.getenv("SARVAM_VOICE", "ishita")
         language = language_override or ws_config.tts_language or os.getenv("SARVAM_LANGUAGE", "en-IN")
+        pace = float(os.getenv("SARVAM_PACE", "1.25"))  # Faster speech (default 1.0)
         # Validate voice is compatible with bulbul:v3 — fallback to ishita if not
         if voice.lower() not in _SARVAM_VOICES:
             logger.warning(f"[TTS] Voice '{voice}' not compatible with bulbul:v3 — falling back to 'ishita'")
             voice = "ishita"
-        logger.info(f"[TTS] Sarvam -- model={model}, speaker={voice}, lang={language}")
-        # Note: Sarvam bulbul:v3 speech speed is controlled via the dashboard Speech Speed slider
-        return sarvam.TTS(model=model, speaker=voice, target_language_code=language)
+        logger.info(f"[TTS] Sarvam -- model={model}, speaker={voice}, lang={language}, pace={pace}")
+        return sarvam.TTS(model=model, speaker=voice, target_language_code=language, pace=pace)
     if provider == "deepgram":
         # Deepgram uses model names for voices (e.g. aura-asteria-en)
         voice = voice_override or os.getenv("DEEPGRAM_TTS_MODEL", "aura-asteria-en")
@@ -516,18 +516,21 @@ class OutboundAssistant(Agent):
         else:
             logger.warning(f"[OUTBOUND-DEBUG] ❌ Knowledge Base NOT found in instructions! Total: {len(instructions)} chars")
             
-        # ── Telephony voice style prompt (latency optimization) ──
+        # ── Telephony voice style prompt (enthusiastic + fast) ──
         instructions += (
-            "\n\n## TELEPHONY VOICE RULES (MANDATORY — SPEED IS CRITICAL):\n"
+            "\n\n## TELEPHONY VOICE RULES (MANDATORY — BE ENTHUSIASTIC & FAST):\n"
             "You are speaking on a live telephone call, NOT writing a chat message.\n"
             "1. EXTREME BREVITY: Your responses MUST be 1 short sentence MAX (under 15 words). "
             "Two sentences only if absolutely necessary. NEVER use bullet points, numbered lists, or markdown.\n"
-            "2. FILLERS: Start with natural fillers like 'Haan ji,' 'Bilkul,' 'Achha,' 'Sure,' 'Right.'\n"
+            "2. FILLERS: Start with natural fillers like 'Haan ji,' 'Bilkul,' 'Achha,' 'Arre wah,' 'Sure.'\n"
             "3. TTS SAFETY: Never write symbols, dates, numbers, or currencies as digits. "
             "Spell them out. Never use asterisks, hashtags, or markdown formatting.\n"
-            "4. SPEED: Respond as fast as possible. Short answers beat long explanations.\n"
-            "5. ALWAYS RESPOND: Every message MUST get a reply. If unsure, say 'Haan ji, bataiye' or 'Ji sun raha hoon.'\n"
-            "6. NATURAL FLOW: Match the caller's energy and language. Be conversational, not robotic.\n"
+            "4. SPEED: Respond IMMEDIATELY. Short answers beat long explanations.\n"
+            "5. SHOW INTEREST: Be genuinely curious about what the customer wants. "
+            "Ask follow-up questions. Show excitement when they share preferences.\n"
+            "6. ENERGY: Sound enthusiastic and helpful — like you really want to help them find the right car.\n"
+            "7. NATURAL FLOW: Match the caller's energy and language. Be conversational, not robotic.\n"
+            "8. NEVER SILENT: If you don't know what to say, ask a question. Never leave dead air.\n"
         )
 
         instructions += (
@@ -758,20 +761,13 @@ async def entrypoint(ctx: agents.JobContext):
         turn_handling=TurnHandlingOptions(
             turn_detection="vad",
             endpointing={
-                "mode": "dynamic",       # ADAPTIVE endpointing — matches each caller's pace
-                "min_delay": 0.15,       # 150ms minimum wait after silence (near-instant response)
-                "max_delay": 0.8,        # 800ms max before forcing turn close (fastest turns)
+                "min_delay": 0.25,       # 250ms — very fast response
+                "max_delay": 1.2,        # 1.2s — quick turn close
+                "silence_duration_ms": 300,
             },
             interruption={
-                "enabled": True,
-                "mode": "vad",           # Use VAD mode (switch to "adaptive" if on LiveKit Cloud)
-                "min_duration": 0.25,    # 250ms minimum speech to register as interruption (fastest barge-in)
-                "min_words": 1,          # Require at least 1 word before interrupting
-                "false_interruption_timeout": 1.0,  # 1s before resuming after noise (fastest recovery)
-                "resume_false_interruption": True,
-            },
-            preemptive_generation={
-                "enabled": True,         # LLM pre-generates response while user talks
+                "mode": "adaptive",      # Clear TTS buffer on user barge-in
+                "min_words": 2,          # Only interrupt if user says 2+ words
             },
         ),
     )
@@ -879,8 +875,8 @@ async def entrypoint(ctx: agents.JobContext):
                 )
             )
             logger.info("[OUTBOUND] Call answered. Triggering greeting...")
-            # Brief moment for WebRTC stream to stabilise after SIP answer
-            await asyncio.sleep(0.8)
+            # Quick pause for WebRTC stream to stabilise after SIP answer
+            await asyncio.sleep(0.3)
             call_connected_event.set()
 
             # ── Write "Connected" status so the dashboard shows real-time progress ──

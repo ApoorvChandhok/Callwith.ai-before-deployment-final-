@@ -225,8 +225,8 @@ export default function RealEstatePage() {
   const cancelRef = useRef(false);
 
   // Voice / LLM / STT config
-  const [llmProvider, setLlmProvider] = useState("groq");
-  const [llmModel, setLlmModel] = useState("llama-3.3-70b-versatile");
+  const [llmProvider, setLlmProvider] = useState("google");
+  const [llmModel, setLlmModel] = useState("gemini-2.5-flash");
   const [ttsProvider, setTtsProvider] = useState("sarvam");
   const [ttsVoice, setTtsVoice] = useState("priya");
   const [ttsLanguage, setTtsLanguage] = useState("hi-IN");
