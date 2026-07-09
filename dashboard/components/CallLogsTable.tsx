@@ -181,8 +181,8 @@ export default function CallLogsTable({ logs, loading }: { logs: any[]; loading?
                           </div>
                         </button>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-gray-800 dark:text-[#e6edf3]">
-                        {new Date(log.timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      <td suppressHydrationWarning className="px-4 py-4 whitespace-nowrap text-gray-800 dark:text-[#e6edf3]">
+                        {new Date(log.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
