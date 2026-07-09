@@ -284,6 +284,7 @@ export default function LeadsCRM({ initialLeads }: Props) {
           </a>
           {/* Export CRM data */}
           <button
+            suppressHydrationWarning
             onClick={handleExport}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-[#8b949e] bg-white dark:bg-[#21262d] hover:bg-gray-50 dark:hover:bg-[#30363d] transition-colors"
             title="Export CRM leads with status and notes"

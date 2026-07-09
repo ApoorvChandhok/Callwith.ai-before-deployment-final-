@@ -46,7 +46,7 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
         return
 
     if not business_id:
-        business_id = "11111111-0000-0000-0000-000000000001"  # Default workspace
+        business_id = "11111111-1111-1111-1111-111111111111"  # Default workspace (RapidX)
 
     # Auto-detect business_type from campaign_id prefix if not provided
     if not business_type and campaign_id:
