@@ -48,6 +48,7 @@ function mapRow(lead: Record<string, unknown>): EnrichedLead {
     status:       (lead.status as LeadStatus) ?? "New",
     priority:     (lead.priority as LeadPriority) ?? "Medium",
     source:       (lead.source as LeadSource) ?? "Manual",
+    businessType: (lead.business_type as string) ?? "Unknown",
     tags:         (lead.tags as string[]) ?? [],
     notes:        (lead.notes as EnrichedLead["notes"]) ?? [],
     assignedTo:   (lead.assigned_to as string) ?? "",

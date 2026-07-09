@@ -461,6 +461,7 @@ export default function LeadsCRM({ initialLeads }: Props) {
                   <span className="flex items-center gap-1">Priority <SortIcon field="priority" /></span>
                 </th>
                 <th className="px-4 py-3 font-medium tracking-wider">Source</th>
+                <th className="px-4 py-3 font-medium tracking-wider">Business</th>
                 <th className="px-4 py-3 font-medium tracking-wider">Tags</th>
                 <th className="px-4 py-3 font-medium tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-[#e6edf3] transition-colors" onClick={() => toggleSort("lastActivity")}>
                   <span className="flex items-center gap-1">Last Activity <SortIcon field="lastActivity" /></span>
@@ -577,6 +578,19 @@ export default function LeadsCRM({ initialLeads }: Props) {
                       <td className="px-4 py-3">
                         <span className="text-[11px] text-gray-500 dark:text-[#8b949e] truncate block max-w-[120px]">
                           {lead.source}
+                        </span>
+                      </td>
+
+                      {/* Business Type */}
+                      <td className="px-4 py-3">
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                          lead.businessType === "Real Estate"
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                            : lead.businessType === "Car Dealership"
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                        }`}>
+                          {lead.businessType || "—"}
                         </span>
                       </td>
 

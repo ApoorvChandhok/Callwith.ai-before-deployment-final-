@@ -32,11 +32,14 @@ def save_lead_csv(name: str, phone: str, city: str, email: str = "", status: str
 
 def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str = "",
                           sentiment: str = "", caller_intent: str = "",
-                          summary: str = "", business_id: str = None):
+                          summary: str = "", business_id: str = None,
+                          business_type: str = "", campaign_id: str = ""):
     """
     Auto-CRM: Upsert lead after every call.
     - If phone exists → update call_count, append note
     - If phone is new → create lead with "AI Agent" source
+    - business_type: "real_estate", "car_dealership", "inbound", etc.
+    - campaign_id: used to auto-detect business_type if not provided
     """
     if not _SUPABASE_URL or not _SUPABASE_KEY:
         logger.info("[CRM] Supabase not configured — skipping upsert")
@@ -44,6 +47,17 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
 
     if not business_id:
         business_id = "11111111-0000-0000-0000-000000000001"  # Default workspace
+
+    # Auto-detect business_type from campaign_id prefix if not provided
+    if not business_type and campaign_id:
+        if campaign_id.startswith("re_"):
+            business_type = "Real Estate"
+        elif campaign_id.startswith("cd_"):
+            business_type = "Car Dealership"
+        elif campaign_id.startswith("wf_"):
+            business_type = "Workflow"
+        else:
+            business_type = "Outbound Campaign"
 
     clean_phone = phone.replace(" ", "").replace("+", "").strip()
     if not clean_phone:
@@ -97,6 +111,8 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
             "notes": existing_notes,
             "last_activity_at": now,
         }
+        if business_type:
+            patch["business_type"] = business_type
         if name:
             patch["name"] = name
         if email:
@@ -129,7 +145,8 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
             "city": city or None,
             "status": "New",
             "priority": "Medium",
-            "source": "AI Agent (Inbound)",
+            "source": "AI Agent",
+            "business_type": business_type or "Unknown",
             "caller_intent": caller_intent or None,
             "sentiment": sentiment or None,
             "call_count": 1,
@@ -416,6 +433,7 @@ async def analyze_and_save_call(
                 caller_intent=analysis.get("caller_intent", ""),
                 summary=analysis.get("summary", ""),
                 business_id=None,  # Will default to workspace 1
+                campaign_id=campaign_id,
             )
         except Exception as crm_err:
             logger.warning(f"[ANALYTICS] CRM upsert failed (non-fatal): {crm_err}")

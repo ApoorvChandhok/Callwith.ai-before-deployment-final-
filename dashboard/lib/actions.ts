@@ -222,6 +222,7 @@ export interface EnrichedLead {
   status: LeadStatus;
   priority: LeadPriority;
   source: LeadSource;
+  businessType: string;  // "Real Estate", "Car Dealership", "Inbound", etc.
   tags: string[];
   notes: LeadNote[];
   assignedTo: string;
