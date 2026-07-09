@@ -174,9 +174,26 @@ export async function getCallLogs() {
       }
     });
 
-    // Sort newest first by timestamp
+    // Deduplicate final merged logs by phone + timestamp (within 5 minutes)
+    const dedupedLogs: any[] = [];
+    const seenKeys = new Set<string>();
+
     mergedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    return mergedLogs;
+
+    for (const log of mergedLogs) {
+      const phone = (log.caller_number || log.phone_number || "").replace("+", "");
+      const time = new Date(log.timestamp).getTime();
+      // Create a key from phone number and time rounded to 5 minutes
+      const timeKey = Math.floor(time / (1000 * 60 * 5));
+      const key = `${phone}_${timeKey}`;
+
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        dedupedLogs.push(log);
+      }
+    }
+
+    return dedupedLogs;
   } catch (error) {
     console.error("Error reading call logs:", error);
     return [];
@@ -760,7 +777,7 @@ async function fetchAllVobizCdrs(authId: string, headers: any): Promise<any[]> {
   let offset = 0;
   let hasMore = true;
   let pageCount = 0;
-  
+
   while (hasMore && pageCount < 20) {
     try {
       const res = await fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/cdr/recent?limit=100&offset=${offset}`, { headers, cache: 'no-store' });
@@ -782,7 +799,18 @@ async function fetchAllVobizCdrs(authId: string, headers: any): Promise<any[]> {
       hasMore = false;
     }
   }
-  return allCdrs;
+
+  // Deduplicate CDRs by sip_call_id (keep the one with longest duration)
+  const cdrMap = new Map<string, any>();
+  for (const cdr of allCdrs) {
+    const key = cdr.sip_call_id || cdr.uuid;
+    if (!key) continue;
+    const existing = cdrMap.get(key);
+    if (!existing || (cdr.duration || 0) > (existing.duration || 0)) {
+      cdrMap.set(key, cdr);
+    }
+  }
+  return Array.from(cdrMap.values());
 }
 
 async function fetchAllVobizTranscripts(authId: string, headers: any): Promise<any[]> {
