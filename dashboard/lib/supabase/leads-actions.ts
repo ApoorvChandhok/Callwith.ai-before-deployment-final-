@@ -32,6 +32,18 @@ async function getEffectiveBusinessId() {
     const activeWorkspaceId = cookieStore.get("active_workspace_id")?.value;
     if (activeWorkspaceId) {
       businessId = activeWorkspaceId;
+    } else {
+      // Fallback: use first active workspace for super_admin
+      const { data: firstWorkspace } = await supabase
+        .from("businesses")
+        .select("id")
+        .eq("is_active", true)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .single();
+      if (firstWorkspace?.id) {
+        businessId = firstWorkspace.id;
+      }
     }
   }
 
