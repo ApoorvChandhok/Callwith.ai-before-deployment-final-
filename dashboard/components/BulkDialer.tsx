@@ -171,6 +171,7 @@ export default function BulkDialer() {
     const [catalogLoading, setCatalogLoading] = useState(true);
     const [liveStatus, setLiveStatus] = useState<Record<string, boolean>>({});
     const [selectedProvider, setSelectedProvider] = useState('google');
+    const [selectedLlmModel, setSelectedLlmModel] = useState('');
     const [selectedVoice, setSelectedVoice] = useState('ishita');
     const [selectedTtsProvider, setSelectedTtsProvider] = useState('sarvam');
     const [selectedLanguage, setSelectedLanguage] = useState('en-IN');
@@ -271,6 +272,14 @@ export default function BulkDialer() {
             }
         });
     }, []);
+
+    // Auto-select first LLM model when provider or catalog changes
+    useEffect(() => {
+        if (!catalogLoading && !selectedLlmModel) {
+            const m = catalog.llm[selectedProvider]?.models ?? [];
+            if (m.length > 0) setSelectedLlmModel(m[0].value);
+        }
+    }, [catalogLoading, selectedProvider, catalog]);
 
     // ── Load templates from API
     const loadTemplates = async () => {
@@ -570,7 +579,7 @@ export default function BulkDialer() {
                         // ── Dynamic per-call config: always send live UI values ──────────
                         // The Python agent will use these directly, bypassing agent_config.json
                         systemPrompt:   resolvedPrompt,   // bulk dialer prompt IS the system prompt
-                        llmModel:       catalog.llm[selectedProvider]?.models?.[0]?.value || "",
+                        llmModel:       selectedLlmModel || catalog.llm[selectedProvider]?.models?.[0]?.value || "",
                         initialGreeting: resolvedGreeting,
                         ttsSpeed:       speechSpeed,
                     }),
@@ -1183,9 +1192,21 @@ export default function BulkDialer() {
                             {/* LLM Provider */}
                             <div>
                                 <label className="block text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider mb-1">LLM</label>
-                                <select value={selectedProvider} onChange={e => setSelectedProvider(e.target.value)}
+                                <select value={selectedProvider} onChange={e => {
+                                    setSelectedProvider(e.target.value);
+                                    const m = catalog.llm[e.target.value]?.models ?? [];
+                                    if (m.length > 0) setSelectedLlmModel(m[0].value);
+                                }}
                                     className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-[#30363d] bg-[#0d1117] text-[#e6edf3] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]/50">
                                     {llmProviders.map(p => <option key={p} value={p}>{p}</option>)}
+                                </select>
+                            </div>
+                            {/* LLM Model */}
+                            <div>
+                                <label className="block text-[10px] font-semibold text-[#8b949e] uppercase tracking-wider mb-1">Model</label>
+                                <select value={selectedLlmModel} onChange={e => setSelectedLlmModel(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-[#30363d] bg-[#0d1117] text-[#e6edf3] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]/50">
+                                    {models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                                 </select>
                             </div>
                             {/* TTS Provider */}

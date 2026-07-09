@@ -58,6 +58,7 @@ export default function CallDispatcher() {
 
     // Voice / model
     const [selectedProvider, setSelectedProvider] = useState('groq');
+    const [selectedLlmModel, setSelectedLlmModel] = useState('');
     const [selectedVoice, setSelectedVoice] = useState('aravind');
     const [selectedTtsProvider, setSelectedTtsProvider] = useState('sarvam');
     const [selectedLanguage, setSelectedLanguage] = useState('en-IN');
@@ -100,11 +101,25 @@ export default function CallDispatcher() {
         });
     }, []);
 
+    // Auto-select first LLM model when provider or catalog changes
+    useEffect(() => {
+        if (!catalogLoading && !selectedLlmModel) {
+            const models = catalog.llm[selectedProvider]?.models ?? [];
+            if (models.length > 0) setSelectedLlmModel(models[0].value);
+        }
+    }, [catalogLoading, selectedProvider, catalog]);
+
     const handleTtsProviderChange = (provider: string) => {
         setSelectedTtsProvider(provider);
         stopPreview();
         const voices = catalog.tts[provider]?.voices ?? [];
         if (voices.length > 0) setSelectedVoice(voices[0].value);
+    };
+
+    const handleLlmProviderChange = (provider: string) => {
+        setSelectedProvider(provider);
+        const models = catalog.llm[provider]?.models ?? [];
+        if (models.length > 0) setSelectedLlmModel(models[0].value);
     };
 
     // ── RAG upload ──────────────────────────────────────────────────────────
@@ -193,7 +208,7 @@ export default function CallDispatcher() {
                     // ── Dynamic per-call config: always send live UI values ──────────
                     // Python agent reads these and overrides ws_config directly
                     systemPrompt:    systemPrompt.trim(),
-                    llmModel:        catalog.llm[selectedProvider]?.models?.[0]?.value || "",
+                    llmModel:        selectedLlmModel || catalog.llm[selectedProvider]?.models?.[0]?.value || "",
                     initialGreeting: greeting,
                     ragContent:      ragContent.trim(),
                 }),
@@ -346,14 +361,25 @@ export default function CallDispatcher() {
                             </div>
                         )}
 
-                        {/* LLM + TTS Provider */}
+                        {/* LLM Provider + Model */}
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider">LLM Provider</label>
                                 <div className="relative">
                                     <select className={`${inputClass} appearance-none pr-8`} value={selectedProvider}
-                                        onChange={(e) => setSelectedProvider(e.target.value)} disabled={catalogLoading}>
+                                        onChange={(e) => handleLlmProviderChange(e.target.value)} disabled={catalogLoading}>
                                         {catalogLoading ? <option>Loading...</option> : llmProviders.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                                    </select>
+                                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-gray-600 dark:text-[#8b949e] uppercase tracking-wider">LLM Model</label>
+                                <div className="relative">
+                                    <select className={`${inputClass} appearance-none pr-8`} value={selectedLlmModel}
+                                        onChange={(e) => setSelectedLlmModel(e.target.value)} disabled={catalogLoading}>
+                                        {catalogLoading ? <option>Loading...</option> :
+                                            (catalog.llm[selectedProvider]?.models ?? []).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                                     </select>
                                     <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                 </div>

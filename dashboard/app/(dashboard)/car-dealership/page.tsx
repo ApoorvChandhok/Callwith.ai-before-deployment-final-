@@ -565,6 +565,7 @@ export default function CarDealershipPage() {
               overrideSystemPrompt: true,
               initialGreeting: `Hi! Main Neha hoon, AutoVerse se. Kaise hain aap?`,
               modelProvider: llmProvider,
+              llmModel: llmModel,
               ttsProvider,
               voice: ttsVoice,
               ttsLanguage,

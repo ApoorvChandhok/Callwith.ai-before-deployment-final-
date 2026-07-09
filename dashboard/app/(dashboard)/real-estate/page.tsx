@@ -811,6 +811,7 @@ Best Regards,
               })(),
               // Voice / LLM config
               modelProvider: llmProvider,
+              llmModel: llmModel,
               ttsProvider: ttsProvider,
               voice: ttsVoice,
               ttsLanguage: ttsLanguage,

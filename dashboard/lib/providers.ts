@@ -181,10 +181,10 @@ export const FALLBACK_CATALOG: ProviderCatalog = {
       ],
     },
     openrouter: {
-      label: "OpenRouter (Groq-pinned)",
+      label: "OpenRouter (Groq-pinned + Fallback)",
       models: [
-        { value: "meta-llama/llama-3.1-8b-instruct", label: "Llama 3.1 8B Instruct (Fast) ⭐" },
-        { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct" },
+        { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct ⭐ (Recommended)" },
+        { value: "meta-llama/llama-3.1-8b-instruct", label: "Llama 3.1 8B Instruct (Fast)" },
         { value: "meta-llama/llama-3.1-70b-instruct", label: "Llama 3.1 70B Instruct" },
         { value: "mistralai/mistral-7b-instruct", label: "Mistral 7B Instruct (Fast)" },
         { value: "google/gemma-2-9b-it", label: "Gemma 2 9B" },
