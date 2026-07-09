@@ -143,6 +143,29 @@ _GEMINI_CATALOG: dict[str, str] = {
 def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
     provider = (provider_override or os.getenv("LLM_PROVIDER", ws_config.llm_provider)).lower()
 
+    if provider == "openrouter":
+        # OpenRouter: routes to Groq-hosted Llama first, falls back to other fast providers
+        # Docs: https://openrouter.ai/docs/provider-routing
+        or_key   = os.getenv("OPENROUTER_API_KEY")
+        or_model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct")
+        if or_key:
+            logger.info(f"[LLM] OpenRouter — model={or_model}, preferred_provider=groq")
+            return openai.LLM(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=or_key,
+                model=or_model,
+                temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
+                # Pin to Groq first; allow_fallbacks=true means if Groq is down,
+                # OpenRouter automatically routes to the next fastest provider.
+                default_headers={
+                    "HTTP-Referer": "https://callwith.ai",
+                    "X-Title": "CallWith.AI Voice Agent",
+                    "X-OR-Provider-Order": "groq",
+                    "X-OR-Allow-Fallbacks": "true",
+                },
+            )
+        logger.warning("[LLM] OpenRouter requested but OPENROUTER_API_KEY not set — falling back")
+
     if provider == "groq":
         model = os.getenv("GROQ_MODEL", ws_config.llm_model)
         logger.info(f"[LLM] Groq — model={model}")
@@ -175,20 +198,25 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
                 )
             _patch_gemini_empty_response(llm_instance)
             return llm_instance
-        logger.warning("[LLM] Google requested but no API key found — falling back to Groq")
+        logger.warning("[LLM] Google requested but no API key found — falling back")
 
-    if provider == "openai":
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key:
-            model = os.getenv("OPENAI_MODEL", ws_config.llm_model)
-            logger.info(f"[LLM] OpenAI — model={model}")
-            return openai.LLM(
-                api_key=openai_key,
-                model=model,
-                )
-        logger.warning("[LLM] OpenAI requested but OPENAI_API_KEY not set — falling back to Groq")
-
-    # Last-resort fallback: Groq
+    # Last-resort fallback: try OpenRouter first, then direct Groq
+    or_key = os.getenv("OPENROUTER_API_KEY")
+    if or_key:
+        or_model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct")
+        logger.info(f"[LLM] OpenRouter (last-resort fallback) — model={or_model}")
+        return openai.LLM(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=or_key,
+            model=or_model,
+            temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
+            default_headers={
+                "HTTP-Referer": "https://callwith.ai",
+                "X-Title": "CallWith.AI Voice Agent",
+                "X-OR-Provider-Order": "groq",
+                "X-OR-Allow-Fallbacks": "true",
+            },
+        )
     model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     logger.info(f"[LLM] Groq (last-resort fallback) — model={model}")
     return openai.LLM(
