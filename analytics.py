@@ -168,6 +168,30 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
         try:
             with urllib.request.urlopen(insert_req, timeout=5):
                 logger.info(f"[CRM] ✅ New lead created — {name or clean_phone} (AI Agent source)")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            # If business_type column doesn't exist, retry without it
+            if "business_type" in body and "column" in body.lower():
+                logger.warning("[CRM] business_type column missing — retrying without it")
+                row.pop("business_type", None)
+                retry_body = json.dumps(row).encode()
+                retry_req = urllib.request.Request(
+                    insert_url, data=retry_body, method="POST",
+                    headers={
+                        "apikey": _SUPABASE_KEY,
+                        "Authorization": f"Bearer {_SUPABASE_KEY}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                )
+                try:
+                    with urllib.request.urlopen(retry_req, timeout=5):
+                        logger.info(f"[CRM] ✅ New lead created (without business_type) — {name or clean_phone}")
+                except Exception as e2:
+                    logger.error(f"[CRM] Lead creation failed on retry: {e2}")
+            else:
+                logger.error(f"[CRM] Lead creation failed: HTTP {e.code} — {body[:200]}")
         except Exception as e:
             logger.error(f"[CRM] Lead creation failed: {e}")
 
