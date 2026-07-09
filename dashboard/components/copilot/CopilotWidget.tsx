@@ -142,6 +142,7 @@ export default function CopilotWidget() {
         </AnimatePresence>
 
         <motion.button
+          suppressHydrationWarning
           whileHover={{ scale: 1.08 }}
           whileTap={{ scale: 0.92 }}
           onClick={() => setIsOpen(!isOpen)}
