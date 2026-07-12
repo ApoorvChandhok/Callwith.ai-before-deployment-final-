@@ -15,7 +15,7 @@
     "llm_provider": "google",
     "llm_model": "gemini-2.5-flash",
     "llm_temperature": 0.95,
-    "transfer_number": "+91 ",
+    "transfer_number": "+91 9999424997",
     "automatic_handoff": true,
     "handoff_conditions": "if the human get frustrated.",
     "resources": [],
@@ -33,12 +33,12 @@
     ]
   },
   "inbound": {
-    "agent_name": "Sana",
+    "agent_name": "Priya",
     "gender": "female",
-    "call_description": "Manages sales for Rapid x team's app and software development services.",
-    "system_prompt": "You are Sana sales manager of Rapid x team we create app and software for our clients",
-    "initial_greeting": "Namaste, main Sana hun, Rapid x team ki sales manager, aapka swagat hai.",
-    "fallback_greeting": "",
+    "call_description": "Receptionist at The Spice Garden restaurant — handles reservations, menu queries, dietary inquiries, and special requests. ",
+    "system_prompt": "You are Priya, the friendly and professional receptionist at The Spice Garden, a premium North Indian restaurant in Connaught Place, Delhi. You handle incoming calls for reservations, menu questions, dietary inquiries, and special requests. You are warm, polite, and efficient — you want the caller to feel welcomed and taken care of. Speak in a mix of English and Hindi (Hinglish) like a real Delhi person. Keep responses SHORT (1-2 sentences max) because this is a phone call. If someone asks to speak to the manager, wants a large party booking (8+ people), has a complaint, or requests something special you cannot handle — immediately call transfer_to_sales to connect them to the manager. Never end a call without either confirming a reservation or transferring to a human. You can also save the caller's contact info using save_lead_info.",
+    "initial_greeting": "Namaste! The Spice Garden mein aapka swagat hai. Main Priya bol rahi hun — batayein, kya reserve karna hai aaj?",
+    "fallback_greeting": "Hello, thank you for calling The Spice Garden! How can I help you today?",
     "stt_provider": "deepgram",
     "stt_model": "nova-2",
     "stt_language": "en",
@@ -50,17 +50,23 @@
     "llm_temperature": 0.7,
     "transfer_number": "+919999424997",
     "automatic_handoff": true,
-    "handoff_conditions": "connect me to human",
-    "resources": [],
+    "handoff_conditions": "caller asks for manager, large party booking, complaint, or special request",
+    "resources": [
+      {
+        "type": "file",
+        "name": "restaurant_menu.md",
+        "value": "data/restaurant_menu.md"
+      }
+    ],
     "custom_functions": [
       {
         "name": "save_lead_info",
-        "description": "Save the caller's contact information (name, phone, city) after collection.",
+        "description": "Save the caller's contact information (name, phone, email) after collection.",
         "enabled": true
       },
       {
         "name": "transfer_to_sales",
-        "description": "Transfer the caller to a live human sales representative.",
+        "description": "Transfer the caller to a live human (manager) for complaints, large party bookings, or special requests.",
         "enabled": true
       }
     ]

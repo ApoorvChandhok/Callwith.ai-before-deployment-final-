@@ -768,6 +768,7 @@ export default function CarDealershipPage() {
             {steps.map((s, i) => (
               <div key={s.num} className="flex items-center">
                 <button
+                  suppressHydrationWarning
                   onClick={() => s.num <= step && setStep(s.num)}
                   disabled={s.num > step + 1}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${

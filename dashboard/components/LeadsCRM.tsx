@@ -486,7 +486,7 @@ export default function LeadsCRM({ initialLeads }: Props) {
                   </td>
                 </tr>
               ) : (
-                paginatedLeads.map((lead) => {
+                paginatedLeads.map((lead, idx) => {
                   const sc = STATUS_CONFIG[lead.status] || STATUS_CONFIG.New;
                   const pc = PRIORITY_CONFIG[lead.priority] || PRIORITY_CONFIG.Medium;
                   const initials = getInitials(lead.name);
@@ -494,7 +494,7 @@ export default function LeadsCRM({ initialLeads }: Props) {
 
                   return (
                     <tr
-                      key={lead.phone}
+                      key={`${lead.phone}-${idx}`}
                       className="hover:bg-gray-50 dark:hover:bg-[#21262d]/50 transition-colors cursor-pointer group"
                       onClick={() => setDetailLead(lead)}
                     >
@@ -538,6 +538,7 @@ export default function LeadsCRM({ initialLeads }: Props) {
                       {/* Status */}
                       <td className="px-4 py-3 relative" onClick={(e) => e.stopPropagation()}>
                         <button
+                          suppressHydrationWarning
                           onClick={() => setShowStatusDropdown(showStatusDropdown === lead.phone ? null : lead.phone)}
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border ${sc.bg} ${sc.text} ${sc.border} hover:opacity-80 transition-opacity`}
                         >
