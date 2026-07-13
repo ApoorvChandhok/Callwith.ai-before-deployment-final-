@@ -11,7 +11,7 @@ import type {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getEffectiveBusinessId() {
+export async function getEffectiveBusinessId() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { businessId: null, user: null };

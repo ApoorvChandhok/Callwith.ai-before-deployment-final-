@@ -16,7 +16,8 @@ LOGS_FILE = os.path.join(DATA_DIR, "call_logs.json")
 _SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 _SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-def save_lead_csv(name: str, phone: str, city: str, email: str = "", status: str = "contact_captured", intent: str = ""):
+def save_lead_csv(name: str, phone: str, city: str, email: str = "", status: str = "contact_captured", intent: str = "", business_id: str = None, business_type: str = "Inbound"):
+    """Save lead to local CSV and immediately sync to Supabase."""
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
         write_header = not os.path.exists(LEADS_FILE)
@@ -27,7 +28,25 @@ def save_lead_csv(name: str, phone: str, city: str, email: str = "", status: str
             f.write(f'"{timestamp}","{name}","{phone}","{city}","{email}","{status}","{intent}"\n')
         logger.info(f"[ANALYTICS] Lead saved to CSV — status={status!r}, intent={intent!r}.")
     except Exception as e:
-        logger.error(f"[ANALYTICS] Failed to save lead: {e}")
+        logger.error(f"[ANALYTICS] Failed to save lead to CSV: {e}")
+
+    # ── Immediate Supabase sync (runs in a background thread — never blocks the call) ──
+    import threading
+    def _sync():
+        try:
+            upsert_lead_from_call(
+                phone=phone,
+                name=name,
+                email=email,
+                city=city,
+                caller_intent=intent,
+                summary=f"Contact captured — status: {status}",
+                business_id=business_id,
+                business_type=business_type,
+            )
+        except Exception as e:
+            logger.warning(f"[ANALYTICS] Supabase sync for {phone!r} failed (non-fatal): {e}")
+    threading.Thread(target=_sync, daemon=True).start()
 
 
 def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str = "",
@@ -196,6 +215,86 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
             logger.error(f"[CRM] Lead creation failed: {e}")
 
 
+def sync_call_log_to_supabase(
+    phone_number: str,
+    direction: str,
+    transcript: str,
+    summary: str,
+    sentiment: str,
+    caller_intent: str,
+    campaign_id: str = "",
+    room_name: str = "",
+    business_id: str = None,
+    duration: int = 0,
+    audio_url: str = None,
+):
+    """
+    Upsert call log into Supabase public.call_logs table.
+    Uses Service Role Key — bypasses RLS.
+    Runs synchronously so the log is persisted before the process exits.
+    """
+    if not _SUPABASE_URL or not _SUPABASE_KEY:
+        logger.debug("[CALL_LOG] Supabase not configured — skipping call log sync")
+        return
+
+    if not business_id:
+        business_id = "11111111-1111-1111-1111-111111111111"  # Default workspace
+
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+
+    # Transcript stored as jsonb array of message objects (or plain text fallback)
+    transcript_payload = [{"text": transcript}] if transcript else []
+
+    # Word-count based duration estimate if not provided
+    if not duration and transcript:
+        word_count = len(transcript.split())
+        duration = max(10, int(word_count / 2.5))
+
+    row = {
+        "business_id":   business_id,
+        "direction":     direction if direction in ("inbound", "outbound") else "inbound",
+        "from_number":   phone_number if direction == "inbound" else None,
+        "to_number":     phone_number if direction == "outbound" else None,
+        "status":        "Completed" if transcript.strip() else "No Answer",
+        "duration":      duration,
+        "transcript":    transcript_payload,
+        "audio_url":     audio_url,
+        "summary":       summary,
+        "sentiment":     sentiment or "Neutral",
+        "caller_intent": caller_intent or "",
+        "campaign_id":   campaign_id or None,
+        "room_name":     room_name or None,
+        "created_at":    now,
+    }
+
+    body = json.dumps(row).encode()
+    req = urllib.request.Request(
+        f"{_SUPABASE_URL}/rest/v1/call_logs",
+        data=body,
+        method="POST",
+        headers={
+            "apikey":        _SUPABASE_KEY,
+            "Authorization": f"Bearer {_SUPABASE_KEY}",
+            "Content-Type":  "application/json",
+            "Accept":        "application/json",
+            "Prefer":        "return=minimal",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8):
+            logger.info(f"[CALL_LOG] ✅ Synced to Supabase — {direction} {phone_number!r}, sentiment={sentiment!r}")
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode("utf-8", errors="replace")
+        # Column missing (migration not yet applied) — log but don't crash
+        if "column" in body_err.lower():
+            logger.warning(f"[CALL_LOG] Schema mismatch (run migration): {body_err[:200]}")
+        else:
+            logger.error(f"[CALL_LOG] Supabase insert failed: HTTP {e.code} — {body_err[:200]}")
+    except Exception as e:
+        logger.error(f"[CALL_LOG] Supabase call log sync failed: {e}")
+
+
+
 async def analyze_and_save_call(
     phone_number: str,
     direction: str,
@@ -327,6 +426,18 @@ async def analyze_and_save_call(
             json.dump(logs, f, indent=2)
             
         logger.info("[ANALYTICS] Call log and sentiment saved.")
+
+        # ── Sync Call Log to Supabase ──────────────────────────────────────────
+        sync_call_log_to_supabase(
+            phone_number=phone_number,
+            direction=direction,
+            transcript=full_transcript,
+            summary=analysis.get("summary", ""),
+            sentiment=analysis.get("sentiment", "Neutral"),
+            caller_intent=analysis.get("caller_intent", "Unknown"),
+            campaign_id=campaign_id,
+            room_name=room_name,
+        )
 
         # ── Campaign result file (BulkDialer report) ─────────────────────────
         # Write per-lead result so the dashboard can poll for live progress

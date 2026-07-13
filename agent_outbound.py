@@ -89,7 +89,7 @@ _VAD = silero.VAD.load(
 # =============================================================================
 
 def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, voice_override: str = None, language_override: str = None, speed: float = 1.0):
-    provider = (provider_override or os.getenv("TTS_PROVIDER", ws_config.tts_provider)).lower()
+    provider = (provider_override or ws_config.tts_provider or os.getenv("TTS_PROVIDER", "sarvam")).lower()
 
     # Route to Sarvam if the voice override is a known Sarvam speaker (bulbul:v3 compatible list)
     _SARVAM_VOICES = {
@@ -123,7 +123,7 @@ def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, v
         logger.info(f"[TTS] Deepgram -- model={voice}")
         return deepgram.TTS(model=voice)
     if provider == "openai" or os.getenv("OPENAI_API_KEY"):
-        voice = voice_override or os.getenv("OPENAI_TTS_VOICE", ws_config.tts_voice)
+        voice = voice_override or ws_config.tts_voice or os.getenv("OPENAI_TTS_VOICE", "alloy")
         logger.info(f"[TTS] OpenAI -- voice={voice}, speed={speed}")
         return openai.TTS(
             model=os.getenv("OPENAI_TTS_MODEL", "tts-1"),
@@ -156,7 +156,7 @@ _GEMINI_CATALOG: dict[str, str] = {
 
 
 def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
-    provider = (provider_override or os.getenv("LLM_PROVIDER", ws_config.llm_provider)).lower()
+    provider = (provider_override or ws_config.llm_provider or os.getenv("LLM_PROVIDER", "groq")).lower()
     logger.info(f"[LLM] Building LLM — provider={provider}")
 
     if provider == "openrouter":
@@ -182,7 +182,7 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
 
     if provider == "groq":
         groq_key = os.getenv("GROQ_API_KEY")
-        model = os.getenv("GROQ_MODEL", ws_config.llm_model)
+        model = ws_config.llm_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         if groq_key:
             logger.info(f"[LLM] ✅ Groq — model={model}")
             return openai.LLM(
@@ -196,13 +196,13 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
     if provider in ("google", "gemini"):
         # Accept either GEMINI_API_KEY or GOOGLE_API_KEY
         gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        env_model    = os.getenv("GEMINI_MODEL", "").strip()
-        config_model = ws_config.llm_model.strip().lower()
+        config_model = ws_config.llm_model.strip().lower() if ws_config.llm_model else ""
+        env_model = os.getenv("GEMINI_MODEL", "").strip()
         gemini_model = (
-            env_model
+            config_model
+            or env_model
             or _GEMINI_CATALOG.get(config_model)
-            or (ws_config.llm_model if "gemini" in config_model else None)
-            or "gemini-2.5-flash"
+            or "gemini-2.5-flash-latest"
         )
         if gemini_key:
             # Use Gemini's OpenAI-compatible endpoint for maximum stability and lower latency
@@ -238,7 +238,7 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
     return openai.LLM(
         base_url="https://api.groq.com/openai/v1",
         api_key=os.getenv("GROQ_API_KEY"),
-        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        model=ws_config.llm_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
     )
 
@@ -489,6 +489,46 @@ class OutboundTools(llm.ToolContext):
 
     @llm.function_tool(
         description=(
+            "Search the knowledge base for information about products, services, pricing, "
+            "features, specifications, availability, or any factual details. Call this when "
+            "the customer asks a question that might be answered by the knowledge base. "
+            "Returns relevant text snippets from the knowledge base."
+        )
+    )
+    async def search_knowledge_base(self, query: str) -> str:
+        """
+        Search the knowledge base for relevant information.
+
+        Args:
+            query: The search query — use the customer's question or a关键词 version of it.
+        """
+        logger.info(f"[TOOL] search_knowledge_base: query={query!r}")
+
+        dashboard_url = os.getenv("DASHBOARD_URL", "http://localhost:3000").rstrip("/")
+
+        payload = json.dumps({
+            "workspace_id": self.ws_config.workspace_id,
+            "action_name": "search_knowledge_base",
+            "parameters": {"query": query, "mode": "outbound"},
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{dashboard_url}/api/tools/execute",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=10)
+            result = json.loads(resp.read().decode()).get("result", "")
+            logger.info(f"[TOOL] search_knowledge_base result: {result[:200]!r}")
+            return result or "No relevant information found in the knowledge base."
+        except Exception as e:
+            logger.error(f"[TOOL] search_knowledge_base failed: {e}")
+            return "I'm having trouble accessing our knowledge base right now. Let me connect you with our team."
+
+    @llm.function_tool(
+        description=(
             "End the current call after completing the conversation. "
             "Use this after you have finished discussing projects, sent brochures, or wrapped up the call. "
             "Say a polite goodbye first, then call this tool to hang up."
@@ -509,7 +549,7 @@ class OutboundTools(llm.ToolContext):
 # =============================================================================
 
 class OutboundAssistant(Agent):
-    def __init__(self, ws_config: WorkspaceAgentConfig, tools: list, user_prompt: str = None, tts_language: str = None, is_campaign: bool = False, call_connected_event: asyncio.Event = None):
+    def __init__(self, ws_config: WorkspaceAgentConfig, tools: list, user_prompt: str = None, tts_language: str = None, is_campaign: bool = False, call_connected_event: asyncio.Event = None, has_dynamic_kb: bool = False):
         
         logger.info(f"[OUTBOUND-DEBUG] OutboundAssistant init. is_campaign={is_campaign}")
         logger.info(f"[OUTBOUND-DEBUG] user_prompt: {repr(user_prompt)}")
@@ -573,6 +613,19 @@ class OutboundAssistant(Agent):
             
         if tts_language and "en" not in tts_language.lower():
             instructions += f"\n\nCRITICAL: Your current target language is '{tts_language}'. You MUST speak entirely in this language code. Do NOT speak English."
+
+        # ── Dynamic RAG search instruction (when KB has embeddings) ──
+        if has_dynamic_kb:
+            instructions += (
+                "\n\nKNOWLEDGE BASE SEARCH — USE PROACTIVELY:\n"
+                "You have a `search_knowledge_base` tool. When the customer asks about products, "
+                "services, pricing, features, specifications, availability, or any factual detail "
+                "that might be in the knowledge base, you MUST call `search_knowledge_base(query)` "
+                "with the customer's question. Use the returned information to answer accurately. "
+                "Never make up product details — always search first. "
+                "Keep your answer short and natural — just the key facts."
+            )
+            logger.info("[OUTBOUND] Dynamic KB search instruction added to prompt")
 
         # Only inject the transfer rule if transfer_call is enabled in config
         if ws_config.is_function_enabled("transfer_call"):
@@ -821,7 +874,8 @@ async def entrypoint(ctx: agents.JobContext):
         user_prompt=user_prompt,
         tts_language=config_dict.get("tts_language"),
         is_campaign=is_campaign_call,
-        call_connected_event=call_connected_event
+        call_connected_event=call_connected_event,
+        has_dynamic_kb=config_dict.get("has_dynamic_rag", False)
     )
 
     # Accumulate transcripts reliably since livekit-agents v0.8+ session history structure varies

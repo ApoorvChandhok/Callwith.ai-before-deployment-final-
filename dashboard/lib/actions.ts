@@ -6,6 +6,17 @@ import path from "path";
 import { analyzeTranscript } from "./groq-analyzer";
 import { revalidatePath } from "next/cache";
 
+// Supabase sync helpers — imported lazily to avoid breaking if Supabase is not configured
+import {
+  updateLeadInSupabase,
+  deleteLeadFromSupabase,
+  bulkDeleteLeadsFromSupabase,
+  bulkUpdateLeadsInSupabase,
+  addLeadToSupabase,
+  getLeadsFromSupabase,
+} from "@/lib/supabase/leads-actions";
+import { getCallLogsFromSupabase } from "@/lib/supabase/call-log-actions";
+
 // Define paths relative to the root project (one level up from dashboard)
 const DATA_DIR = path.join(process.cwd(), "..", "data");
 const LOGS_FILE = path.join(DATA_DIR, "call_logs.json");
@@ -32,8 +43,10 @@ export async function getCallLogs() {
     }
 
     // 1. Fetch local logs (for AI Sentiment, Summary, Transcript)
-    let localLogs: any[] = [];
-    if (fs.existsSync(LOGS_FILE)) {
+    let localLogs: any[] = await getCallLogsFromSupabase();
+    
+    // Fallback to local JSON if Supabase has no records (e.g. fresh clone or un-migrated DB)
+    if ((!localLogs || localLogs.length === 0) && fs.existsSync(LOGS_FILE)) {
       localLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
     }
 
@@ -281,6 +294,13 @@ function parseLeadsCsv(): { timestamp: string; name: string; phone: string; city
 
 export async function getLeads(): Promise<EnrichedLead[]> {
   try {
+    // Try Supabase first
+    const sbLeads = await getLeadsFromSupabase();
+    if (sbLeads && sbLeads.length > 0) {
+      return sbLeads;
+    }
+
+    // Fallback to local files if Supabase is empty
     const csvLeads = parseLeadsCsv();
     const meta = readLeadsMeta();
 
@@ -943,6 +963,21 @@ export async function updateLeadMeta(
     writeLeadsMeta(meta);
     revalidatePath("/leads");
     revalidatePath("/");
+
+    // ── Supabase sync (fire-and-forget) ──
+    const updates: Record<string, unknown> = {};
+    if (data.status   !== undefined) updates.status    = data.status;
+    if (data.priority !== undefined) updates.priority  = data.priority;
+    if (data.source   !== undefined) updates.source    = data.source;
+    if (data.tags     !== undefined) updates.tags      = data.tags;
+    if (data.notes    !== undefined) updates.notes     = data.notes;
+    if (data.assignedTo !== undefined) updates.assignedTo = data.assignedTo;
+    if (Object.keys(updates).length > 0) {
+      updateLeadInSupabase(phone, updates as any).catch((e) =>
+        console.warn("[CRM] Supabase updateLead sync failed (non-fatal):", e?.message)
+      );
+    }
+
     return true;
   } catch (error) {
     console.error("Error updating lead meta:", error);
@@ -966,6 +1001,12 @@ export async function addLeadNote(
     writeLeadsMeta(meta);
     revalidatePath("/leads");
     revalidatePath("/");
+
+    // ── Supabase sync (fire-and-forget) ──
+    updateLeadInSupabase(phone, { notes: meta[phone].notes } as any).catch((e) =>
+      console.warn("[CRM] Supabase addNote sync failed (non-fatal):", e?.message)
+    );
+
     return true;
   } catch (error) {
     console.error("Error adding lead note:", error);
@@ -1020,6 +1061,20 @@ export async function addNewLead(data: {
     writeLeadsMeta(meta);
     revalidatePath("/leads");
     revalidatePath("/");
+
+    // ── Supabase sync (fire-and-forget) ──
+    addLeadToSupabase({
+      name:     data.name,
+      phone:    data.phone,
+      email:    data.email,
+      city:     data.city,
+      status:   data.status,
+      priority: data.priority,
+      source:   data.source,
+    }).catch((e) =>
+      console.warn("[CRM] Supabase addLead sync failed (non-fatal):", e?.message)
+    );
+
     return true;
   } catch (error) {
     console.error("Error adding lead:", error);
@@ -1045,6 +1100,12 @@ export async function deleteLead(phone: string): Promise<boolean> {
     writeLeadsMeta(meta);
     revalidatePath("/leads");
     revalidatePath("/");
+
+    // ── Supabase sync (fire-and-forget) ──
+    deleteLeadFromSupabase(phone).catch((e) =>
+      console.warn("[CRM] Supabase deleteLead sync failed (non-fatal):", e?.message)
+    );
+
     return true;
   } catch (error) {
     console.error("Error deleting lead:", error);
@@ -1071,6 +1132,14 @@ export async function bulkUpdateLeads(
     writeLeadsMeta(meta);
     revalidatePath("/leads");
     revalidatePath("/");
+
+    // ── Supabase sync (fire-and-forget) ──
+    if (data.status) {
+      bulkUpdateLeadsInSupabase(phones, data.status).catch((e) =>
+        console.warn("[CRM] Supabase bulkUpdate sync failed (non-fatal):", e?.message)
+      );
+    }
+
     return true;
   } catch (error) {
     console.error("Error bulk updating leads:", error);
@@ -1096,6 +1165,12 @@ export async function bulkDeleteLeads(phones: string[]): Promise<boolean> {
     writeLeadsMeta(meta);
     revalidatePath("/leads");
     revalidatePath("/");
+
+    // ── Supabase sync (fire-and-forget) ──
+    bulkDeleteLeadsFromSupabase(phones).catch((e) =>
+      console.warn("[CRM] Supabase bulkDelete sync failed (non-fatal):", e?.message)
+    );
+
     return true;
   } catch (error) {
     console.error("Error bulk deleting leads:", error);

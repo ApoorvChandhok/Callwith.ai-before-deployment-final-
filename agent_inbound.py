@@ -81,7 +81,7 @@ _VAD = silero.VAD.load(
 # =============================================================================
 
 def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, voice_override: str = None, language_override: str = None):
-    provider = (provider_override or os.getenv("TTS_PROVIDER", ws_config.tts_provider)).lower()
+    provider = (provider_override or ws_config.tts_provider or os.getenv("TTS_PROVIDER", "sarvam")).lower()
 
     # Route to Sarvam if the voice override is a known Sarvam speaker (bulbul:v3 compatible list)
     _SARVAM_VOICES = {
@@ -115,7 +115,7 @@ def _build_tts(ws_config: WorkspaceAgentConfig, provider_override: str = None, v
     if os.getenv("OPENAI_API_KEY"):
         return openai.TTS(
             model=os.getenv("OPENAI_TTS_MODEL", "tts-1"),
-            voice=voice_override or os.getenv("OPENAI_TTS_VOICE", ws_config.tts_voice),
+            voice=voice_override or ws_config.tts_voice or os.getenv("OPENAI_TTS_VOICE", "alloy"),
         )
     return deepgram.TTS(model=os.getenv("DEEPGRAM_TTS_MODEL", "aura-asteria-en"))
 
@@ -141,13 +141,13 @@ _GEMINI_CATALOG: dict[str, str] = {
 
 
 def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
-    provider = (provider_override or os.getenv("LLM_PROVIDER", ws_config.llm_provider)).lower()
+    provider = (provider_override or ws_config.llm_provider or os.getenv("LLM_PROVIDER", "groq")).lower()
 
     if provider == "openrouter":
         # OpenRouter: routes to Groq-hosted Llama first, falls back to other fast providers
         # Docs: https://openrouter.ai/docs/provider-routing
         or_key   = os.getenv("OPENROUTER_API_KEY")
-        or_model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct")
+        or_model = ws_config.llm_model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct")
         if or_key:
             logger.info(f"[LLM] OpenRouter — model={or_model}, preferred_provider=groq")
             return openai.LLM(
@@ -157,7 +157,7 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
                 temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
                 # Pin to Groq first; allow_fallbacks=true means if Groq is down,
                 # OpenRouter automatically routes to the next fastest provider.
-                default_headers={
+                extra_headers={
                     "HTTP-Referer": "https://callwith.ai",
                     "X-Title": "CallWith.AI Voice Agent",
                     "X-OR-Provider-Order": "groq",
@@ -167,7 +167,7 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
         logger.warning("[LLM] OpenRouter requested but OPENROUTER_API_KEY not set — falling back")
 
     if provider == "groq":
-        model = os.getenv("GROQ_MODEL", ws_config.llm_model)
+        model = ws_config.llm_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         logger.info(f"[LLM] Groq — model={model}")
         return openai.LLM(
             base_url="https://api.groq.com/openai/v1",
@@ -179,12 +179,12 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
     if provider in ("google", "gemini"):
         # Accept either GEMINI_API_KEY or GOOGLE_API_KEY
         gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        env_model    = os.getenv("GEMINI_MODEL", "").strip()
-        config_model = ws_config.llm_model.strip().lower()
+        config_model = ws_config.llm_model.strip().lower() if ws_config.llm_model else ""
+        env_model = os.getenv("GEMINI_MODEL", "").strip()
         gemini_model = (
-            env_model
+            config_model
+            or env_model
             or _GEMINI_CATALOG.get(config_model)
-            or (ws_config.llm_model if "gemini" in config_model else None)
             or "gemini-2.5-flash-latest"
         )
         if gemini_key:
@@ -210,7 +210,7 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
             api_key=or_key,
             model=or_model,
             temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
-            default_headers={
+            extra_headers={
                 "HTTP-Referer": "https://callwith.ai",
                 "X-Title": "CallWith.AI Voice Agent",
                 "X-OR-Provider-Order": "groq",
@@ -552,6 +552,55 @@ class InboundTools(llm.ToolContext):
             logger.error(f"[TOOL] Gateway error for action={action_name!r}: {e}")
             return "Bilkul, ek second ruko — main aapki request note kar rahi hoon aur hamaari team aapko jald confirm karegi."
 
+    @llm.function_tool(
+        description=(
+            "Search the knowledge base for information about products, services, pricing, "
+            "features, specifications, availability, or any factual details. Call this when "
+            "the caller asks a question that might be answered by the knowledge base. "
+            "Returns relevant text snippets from the knowledge base."
+        )
+    )
+    async def search_knowledge_base(self, query: str) -> str:
+        """
+        Search the knowledge base for relevant information.
+
+        Args:
+            query: The search query — use the caller's question or a关键词 version of it.
+        """
+        logger.info(f"[TOOL] search_knowledge_base: query={query!r}")
+
+        gateway_url = os.getenv("TOOL_GATEWAY_URL", "http://localhost:3000/api/tools/execute")
+        workspace_id = self.ws_config.workspace_id or "default"
+
+        payload = json.dumps({
+            "workspace_id": workspace_id,
+            "action_name": "search_knowledge_base",
+            "parameters": {"query": query, "mode": "inbound"},
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            gateway_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            loop = asyncio.get_event_loop()
+            response_text = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: _do_http(req, timeout=8.0)),
+                timeout=10.0,
+            )
+            data = json.loads(response_text)
+            result = data.get("result") or "No relevant information found in the knowledge base."
+            logger.info(f"[TOOL] search_knowledge_base result: {result[:200]!r}")
+            return result
+        except asyncio.TimeoutError:
+            logger.warning("[TOOL] search_knowledge_base timed out")
+            return "I'm having trouble accessing our knowledge base right now. Let me connect you with our team."
+        except Exception as e:
+            logger.error(f"[TOOL] search_knowledge_base failed: {e}")
+            return "I'm having trouble searching our knowledge base. Let me connect you with our team."
+
 
 def _do_http(req: urllib.request.Request, timeout: float = 5.0) -> str:
     """Blocking HTTP call — run in executor so it doesn't block the event loop."""
@@ -564,11 +613,133 @@ def _do_http(req: urllib.request.Request, timeout: float = 5.0) -> str:
 
 
 # =============================================================================
+# CRM LOOKUP
+# =============================================================================
+
+def _lookup_caller_crm(caller_phone: str) -> dict | None:
+    """
+    Synchronous CRM lookup — run in an executor to avoid blocking the event loop.
+
+    Queries Supabase first for fast indexed lookup.
+    Falls back to reading data/leads.csv and data/leads_meta.json if Supabase fails.
+    Returns a dict with keys: name, city, email, status, tags, notes
+    Returns None if the caller is not in the CRM.
+    """
+    if not caller_phone:
+        return None
+
+    # Normalise: strip +, spaces, dashes
+    def _norm(p: str) -> str:
+        return re.sub(r"[\s+\-]", "", str(p or ""))
+
+    norm_caller = _norm(caller_phone)
+    if not norm_caller:
+        return None
+
+    # 1. Try Supabase for O(1) indexed lookup (Optimal for large DBs)
+    sb_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    sb_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+    if sb_url and sb_key:
+        try:
+            import urllib.request
+            import urllib.parse
+            # We don't filter by business_id here because inbound routing handles tenant isolation,
+            # but if we wanted to be strictly isolated we could pass business_id.
+            query = urllib.parse.urlencode({
+                "phone": f"eq.{norm_caller}",
+                "select": "name,city,email,status,tags,notes",
+                "limit": "1"
+            })
+            req = urllib.request.Request(
+                f"{sb_url}/rest/v1/leads?{query}",
+                headers={
+                    "apikey": sb_key,
+                    "Authorization": f"Bearer {sb_key}",
+                    "Accept": "application/json",
+                }
+            )
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                rows = json.loads(resp.read().decode("utf-8"))
+                if rows:
+                    row = rows[0]
+                    # Parse notes which might be a JSON string or a list
+                    notes = row.get("notes") or []
+                    if isinstance(notes, str):
+                        try:
+                            notes = json.loads(notes)
+                        except:
+                            notes = []
+                            
+                    logger.info(f"[CRM] Supabase lookup successful for {norm_caller}")
+                    return {
+                        "name":   row.get("name") or "",
+                        "city":   row.get("city") or "",
+                        "email":  row.get("email") or "",
+                        "status": row.get("status") or "New",
+                        "tags":   row.get("tags") or [],
+                        "notes":  notes,
+                    }
+        except Exception as e:
+            logger.warning(f"[CRM] Supabase lookup failed (falling back to CSV): {e}")
+
+    # 2. Fallback: Local CSV Search (O(N) full scan)
+    import csv as csv_module
+    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    leads_csv  = os.path.join(data_dir, "leads.csv")
+    leads_meta = os.path.join(data_dir, "leads_meta.json")
+
+    if not os.path.exists(leads_csv):
+        return None
+
+    matched_row = None
+    try:
+        with open(leads_csv, encoding="utf-8") as f:
+            reader = csv_module.DictReader(f)
+            for row in reader:
+                csv_phone = _norm(row.get("Phone", ""))
+                if csv_phone == norm_caller or norm_caller in csv_phone or csv_phone in norm_caller:
+                    matched_row = row
+                    break
+    except Exception as e:
+        logger.warning(f"[CRM] Failed to read leads.csv: {e}")
+        return None
+
+    if not matched_row:
+        return None
+
+    # Load meta for enriched data
+    meta = {}
+    try:
+        if os.path.exists(leads_meta):
+            with open(leads_meta, encoding="utf-8") as f:
+                all_meta = json.load(f)
+            meta = all_meta.get(caller_phone) or all_meta.get(matched_row.get("Phone", "")) or {}
+    except Exception as e:
+        logger.warning(f"[CRM] Failed to read leads_meta.json: {e}")
+
+    return {
+        "name":   meta.get("name")   or matched_row.get("Name", ""),
+        "city":   meta.get("city")   or matched_row.get("City", ""),
+        "email":  meta.get("email")  or "",
+        "status": meta.get("status") or "New",
+        "tags":   meta.get("tags")   or [],
+        "notes":  meta.get("notes")  or [],
+    }
+
+
+async def lookup_caller_crm_async(caller_phone: str) -> dict | None:
+    """Async wrapper — runs the blocking file I/O in a thread executor."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _lookup_caller_crm, caller_phone)
+
+
+# =============================================================================
 # AGENT
 # =============================================================================
 
 class InboundAssistant(Agent):
-    def __init__(self, ws_config: WorkspaceAgentConfig, tools: list, user_prompt: str = None, tts_language: str = None, rag_block: str = ""):
+    def __init__(self, ws_config: WorkspaceAgentConfig, tools: list, user_prompt: str = None, tts_language: str = None, rag_block: str = "", has_dynamic_kb: bool = False):
         # Build instructions with KB-FIRST ordering so LLM prioritizes knowledge base
         instructions = ""
         if rag_block:
@@ -593,6 +764,19 @@ class InboundAssistant(Agent):
             "Spell them out. Never use asterisks, hashtags, or markdown formatting.\n"
             "4. SPEED: Respond as fast as possible. Short answers beat long explanations.\n"
         )
+
+        # ── Dynamic RAG search instruction (when KB has embeddings) ──
+        if has_dynamic_kb:
+            instructions += (
+                "\n\nKNOWLEDGE BASE SEARCH — USE PROACTIVELY:\n"
+                "You have a `search_knowledge_base` tool. When the caller asks about products, "
+                "services, pricing, features, specifications, availability, or any factual detail "
+                "that might be in the knowledge base, you MUST call `search_knowledge_base(query)` "
+                "with the caller's question. Use the returned information to answer accurately. "
+                "Never make up product details — always search first. "
+                "Keep your answer short and natural — just the key facts."
+            )
+            logger.info("[INBOUND] Dynamic KB search instruction added to prompt")
 
         instructions += (
             "\n\nCRITICAL MULTILINGUAL INSTRUCTION: Your Text-to-Speech engine is strict. "
@@ -648,6 +832,46 @@ async def entrypoint(ctx: agents.JobContext):
     await ctx.connect()
     logger.info(f"[INBOUND] Connected. Remote participants: {len(ctx.room.remote_participants)}")
 
+    # ── Extract caller phone from SIP participant identity ──────────────────
+    caller_phone = ""
+    try:
+        for p in ctx.room.remote_participants.values():
+            identity = p.identity or ""
+            # SIP participants carry the phone number in their identity or attributes
+            phone_candidate = ""
+            if hasattr(p, "attributes") and isinstance(p.attributes, dict):
+                phone_candidate = (
+                    p.attributes.get("sip.callFrom", "")
+                    or p.attributes.get("sip.phoneNumber", "")
+                    or p.attributes.get("phone", "")
+                )
+            if not phone_candidate:
+                # Try extracting digits from identity (e.g. "sip_+919876543210_...")
+                m = re.search(r"(\+?\d{7,15})", identity)
+                if m:
+                    phone_candidate = m.group(1)
+            if phone_candidate:
+                caller_phone = phone_candidate
+                break
+        if caller_phone:
+            logger.info(f"[INBOUND] Caller phone extracted: {caller_phone}")
+        else:
+            logger.info("[INBOUND] Could not extract caller phone from participants")
+    except Exception as e:
+        logger.warning(f"[INBOUND] Caller phone extraction failed: {e}")
+
+    # ── CRM Lookup — runs in thread executor, non-blocking ──────────────────
+    crm_record = None
+    if caller_phone:
+        try:
+            crm_record = await lookup_caller_crm_async(caller_phone)
+            if crm_record:
+                logger.info(f"[CRM] ✅ Caller found in CRM → name={crm_record['name']!r}, status={crm_record['status']!r}, city={crm_record['city']!r}")
+            else:
+                logger.info(f"[CRM] Caller {caller_phone!r} not in CRM — will collect info during call")
+        except Exception as e:
+            logger.warning(f"[CRM] Lookup error: {e}")
+
     # Log metadata (informational only — inbound doesn't need phone from metadata)
     config_dict = {}
     workspace_id = None
@@ -697,6 +921,47 @@ async def entrypoint(ctx: agents.JobContext):
         logger.info(f"[INBOUND] Config override: initial_greeting from metadata")
     if meta_fallback_greeting:
         ws_config.fallback_greeting = meta_fallback_greeting
+
+    # ── Inject CRM context into system prompt ───────────────────────────────
+    # This runs AFTER metadata overrides so the CRM block is always appended.
+    if crm_record and crm_record.get("name"):
+        name   = crm_record["name"]
+        city   = crm_record.get("city", "")
+        status = crm_record.get("status", "New")
+        tags   = ", ".join(crm_record.get("tags") or [])
+        notes  = crm_record.get("notes") or []
+        # Surface the most recent note (if any)
+        latest_note = notes[-1]["text"] if notes else ""
+
+        crm_block = (
+            f"\n\n═══════════════════════════════════════════════\n"
+            f"CALLER CRM PROFILE (ALREADY IN YOUR DATABASE):\n"
+            f"═══════════════════════════════════════════════\n"
+            f"Name:   {name}\n"
+            f"City:   {city or 'Unknown'}\n"
+            f"Status: {status}\n"
+        )
+        if tags:
+            crm_block += f"Tags:   {tags}\n"
+        if latest_note:
+            crm_block += f"Last Note: {latest_note}\n"
+        crm_block += (
+            f"═══════════════════════════════════════════════\n"
+            f"INSTRUCTIONS: You already know this caller. Greet them by their first name "
+            f"immediately (e.g. 'Hello {name.split()[0]}!'). "
+            f"Do NOT ask for their name or phone — you already have it. "
+            f"Reference their previous status ({status}) naturally if relevant.\n"
+        )
+        ws_config.system_prompt += crm_block
+        logger.info(f"[CRM] Injected CRM profile for {name!r} into system prompt")
+    elif caller_phone:
+        # New caller — instruct agent to collect their info
+        ws_config.system_prompt += (
+            "\n\nNEW CALLER (NOT IN CRM): This caller is not in our database yet. "
+            "Once you have helped them, politely ask for their name and confirm their "
+            "phone number so we can follow up. Save their details using the save_lead_info tool."
+        )
+        logger.info("[CRM] New caller — agent instructed to collect info")
 
     # --- Build plugins ---
     fnc_ctx   = InboundTools(ctx, ws_config)
@@ -775,7 +1040,8 @@ async def entrypoint(ctx: agents.JobContext):
         tools=available_tools,
         user_prompt=user_prompt,
         tts_language=config_dict.get("tts_language"),
-        rag_block=rag_block
+        rag_block=rag_block,
+        has_dynamic_kb=config_dict.get("has_dynamic_rag", False)
     )
 
     call_transcript_messages = []

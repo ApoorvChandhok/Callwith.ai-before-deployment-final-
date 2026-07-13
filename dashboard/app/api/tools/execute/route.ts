@@ -19,6 +19,7 @@ const DATA_DIR = path.join(process.cwd(), "..", "data");
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
 
 // ── Helper: fetch integration tokens from Supabase ──────────────────────────
 async function getIntegrationTokens(
@@ -588,6 +589,102 @@ async function handleSendBrochure(
   return `Bilkul! Main aapko ${projectName} ki brochure email kar rahi hoon — aapko abhi ek email milega. Agar koi aur project dekhna chahein toh batayiyega!`;
 }
 
+// ── Knowledge Base Search ────────────────────────────────────────────────────
+
+async function handleSearchKnowledgeBase(
+  parameters: Record<string, unknown>,
+  workspaceId: string
+): Promise<string> {
+  const query = String(parameters.query || "").trim();
+  const mode = String(parameters.mode || "inbound");
+
+  if (!query) {
+    return "No search query provided. I'll check with our team for more information.";
+  }
+
+  if (!GEMINI_API_KEY) {
+    console.error("[tool-gateway] GEMINI_API_KEY not configured — cannot search KB");
+    return "I don't have access to the knowledge base right now. Let me connect you with our team.";
+  }
+
+  try {
+    // 1. Embed the query using Gemini
+    const embedRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "models/gemini-embedding-001",
+          content: { parts: [{ text: query }] },
+          outputDimensionality: 768,
+        }),
+      }
+    );
+
+    if (!embedRes.ok) {
+      const errText = await embedRes.text();
+      console.error("[tool-gateway] Embedding failed:", embedRes.status, errText);
+      return "I'm having trouble searching our knowledge base. Let me connect you with our team.";
+    }
+
+    const embedData = await embedRes.json();
+    const queryEmbedding = embedData.embedding?.values;
+
+    if (!queryEmbedding || !Array.isArray(queryEmbedding)) {
+      console.error("[tool-gateway] Invalid embedding response:", embedData);
+      return "I couldn't process your search query. Let me connect you with our team.";
+    }
+
+    // 2. Call Supabase RPC for vector search
+    const rpcRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/rpc/search_knowledge_base`,
+      {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          p_business_id: workspaceId,
+          p_mode: mode,
+          p_query_embedding: `[${queryEmbedding.join(",")}]`,
+          p_match_count: 5,
+          p_similarity_threshold: 0.25,
+        }),
+      }
+    );
+
+    if (!rpcRes.ok) {
+      const errText = await rpcRes.text();
+      console.error("[tool-gateway] KB search RPC failed:", rpcRes.status, errText);
+      return "I'm having trouble accessing our knowledge base. Let me connect you with our team.";
+    }
+
+    const results: Array<{ content: string; similarity: number; file_name: string }> = await rpcRes.json();
+
+    if (!results || results.length === 0) {
+      console.log(`[tool-gateway] No KB results for query: "${query}"`);
+      return "I don't have specific information about that in our knowledge base. Let me connect you with our team for more details.";
+    }
+
+    // 3. Concatenate top results (take top 3 to keep response short for telephony)
+    const topResults = results.slice(0, 3);
+    const combined = topResults
+      .map((r) => r.content.trim())
+      .filter((c) => c.length > 0)
+      .join("\n\n");
+
+    console.log(`[tool-gateway] ✅ KB search returned ${results.length} results, using top ${topResults.length}`);
+
+    return combined || "I found some information but couldn't retrieve it properly. Let me connect you with our team.";
+  } catch (err) {
+    console.error("[tool-gateway] KB search error:", err);
+    return "I'm having trouble searching our knowledge base right now. Let me connect you with our team.";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main POST handler
 // ---------------------------------------------------------------------------
@@ -633,6 +730,10 @@ export async function POST(req: NextRequest) {
 
       case "send_brochure":
         result = await handleSendBrochure(parameters, workspaceId);
+        break;
+
+      case "search_knowledge_base":
+        result = await handleSearchKnowledgeBase(parameters, workspaceId);
         break;
 
       // ─── Add new real-time integrations below ───────────────────────────

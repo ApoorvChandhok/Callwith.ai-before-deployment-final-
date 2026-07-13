@@ -254,6 +254,11 @@ export default function LeadsCRM({ initialLeads }: Props) {
     setDetailLead(updatedLead);
   };
 
+  const handleLeadDeleted = (phone: string) => {
+    setLeads((prev) => prev.filter((l) => l.phone !== phone));
+    setDetailLead(null);
+  };
+
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-30" />;
     return sortDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
@@ -680,6 +685,7 @@ export default function LeadsCRM({ initialLeads }: Props) {
           lead={detailLead}
           onClose={() => setDetailLead(null)}
           onUpdate={handleLeadUpdated}
+          onDelete={handleLeadDeleted}
         />
       )}
 

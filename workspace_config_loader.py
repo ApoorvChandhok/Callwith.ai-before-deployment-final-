@@ -74,6 +74,9 @@ class WorkspaceAgentConfig:
     # Pre-formatted workspace resources text (can be re-appended when system_prompt is overridden)
     workspace_resources_text: str      = ""
 
+    # Dynamic RAG — whether the workspace has embedded knowledge base chunks
+    has_dynamic_kb: bool               = False
+
     # Custom functions (transfer_call, etc.) with enabled/disabled state
     custom_functions: list             = field(default_factory=list)
 
@@ -364,6 +367,24 @@ async def load_workspace_config(
     result.workspace_resources_text = _build_resources_text(result.resources)
     if result.workspace_resources_text:
         result.system_prompt += result.workspace_resources_text
+
+    # Check if workspace has embedded knowledge base (for dynamic RAG)
+    kb_check = await loop.run_in_executor(
+        None,
+        lambda: _supabase_get(
+            "knowledge_base_documents",
+            {
+                "select": "id",
+                "business_id": f"eq.{workspace_id}",
+                "mode": f"eq.{mode}",
+                "status": "eq.ready",
+                "limit": "1",
+            },
+        )
+    )
+    if isinstance(kb_check, list) and len(kb_check) > 0:
+        result.has_dynamic_kb = True
+        logger.info(f"[WorkspaceLoader] Dynamic KB detected for workspace={workspace_id!r} mode={mode}")
 
     # SIP trunk IDs from the workspace_config table (via get_workspace_config RPC).
     # We do NOT fall back to .env vars here — if a workspace has been provisioned

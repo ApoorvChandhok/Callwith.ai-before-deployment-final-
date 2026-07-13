@@ -94,6 +94,20 @@ export async function POST(request: Request) {
         const roomName = `ws-${shortWorkspaceId}-${Date.now()}`;
         const participantIdentity = `sip_${phoneNumber}`;
 
+        // Check if workspace has embedded knowledge base (for dynamic RAG)
+        let hasDynamicRag = false;
+        try {
+            const { data: kbDocs } = await supabase
+                .from("knowledge_base_documents")
+                .select("id")
+                .eq("business_id", workspaceId)
+                .eq("status", "ready")
+                .limit(1);
+            hasDynamicRag = !!(kbDocs && kbDocs.length > 0);
+        } catch {
+            // Table may not exist yet — graceful fallback
+        }
+
         const metadata = JSON.stringify({
             phone_number:     phoneNumber,
             user_prompt:      prompt || systemPrompt || "",  // pass system prompt as user_prompt too, so Python agent uses it directly
@@ -115,6 +129,8 @@ export async function POST(request: Request) {
             override_system_prompt: overrideSystemPrompt,
             initial_greeting: initialGreeting,
             agent_name:       agentName,
+            // Dynamic RAG flag — tells agent to use search_knowledge_base tool
+            has_dynamic_rag:  hasDynamicRag,
             // ── Dynamic per-call agent config from UI ──────────────────────────
             // Python agents read these and override ws_config fields directly,
             // bypassing the static data/agent_config.json file entirely.

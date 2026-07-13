@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useUser } from "@/lib/context/user-context";
 import {
   X, Phone, Mail, MessageCircle, MapPin, Tag, Plus,
   Clock, User, Send, ChevronDown, Check, Trash2,
@@ -32,9 +34,12 @@ interface Props {
   lead: EnrichedLead;
   onClose: () => void;
   onUpdate: (lead: EnrichedLead) => void;
+  onDelete?: (phone: string) => void;
 }
 
-export default function LeadDetailPanel({ lead, onClose, onUpdate }: Props) {
+export default function LeadDetailPanel({ lead, onClose, onUpdate, onDelete }: Props) {
+  const router = useRouter();
+  const { can } = useUser();
   const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity">("details");
   const [newNote, setNewNote] = useState("");
   const [newTag, setNewTag] = useState("");
@@ -45,6 +50,7 @@ export default function LeadDetailPanel({ lead, onClose, onUpdate }: Props) {
   const [editAssignee, setEditAssignee] = useState(lead.assignedTo);
   const [editName, setEditName] = useState(lead.name);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const nameSum = (lead.name || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const avatarColor = AVATAR_COLORS[nameSum % AVATAR_COLORS.length];
@@ -108,6 +114,21 @@ export default function LeadDetailPanel({ lead, onClose, onUpdate }: Props) {
     const updatedTags = lead.tags.filter((t) => t !== tag);
     await updateLeadMeta(lead.phone, { tags: updatedTags });
     onUpdate({ ...lead, tags: updatedTags, lastActivity: new Date().toISOString() });
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete ${lead.name || lead.phone} from the CRM? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await deleteLead(lead.phone);
+      onDelete?.(lead.phone);
+      onClose();
+      router.refresh();
+    } catch (e) {
+      console.error("Delete failed:", e);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -508,6 +529,19 @@ export default function LeadDetailPanel({ lead, onClose, onUpdate }: Props) {
             </div>
           )}
         </div>
+        {/* Footer — Delete */}
+        {can.deleteLeads && (
+          <div className="flex-shrink-0 px-5 py-4 border-t border-gray-200/50 dark:border-white/5">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-red-500 border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              {deleting ? "Deleting..." : "Delete Lead"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
