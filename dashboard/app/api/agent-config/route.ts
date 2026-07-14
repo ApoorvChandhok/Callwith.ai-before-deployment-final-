@@ -29,7 +29,9 @@ const DEFAULTS: Record<string, any> = {
     resources: [],
     custom_functions: [
       { name: "save_lead_info", description: "Save the caller's contact information (name, phone, city) after collection.", enabled: true },
-      { name: "transfer_to_sales", description: "Transfer the caller to a live human sales representative.", enabled: true }
+      { name: "transfer_to_sales", description: "Transfer the caller to a live human sales representative.", enabled: true },
+      { name: "book_appointment", description: "Book a Google Calendar appointment for the caller (date, time, treatment). Requires Google Calendar integration.", enabled: true },
+      { name: "check_availability", description: "Check next available appointment slots on Google Calendar.", enabled: true }
     ]
   },
   outbound: {

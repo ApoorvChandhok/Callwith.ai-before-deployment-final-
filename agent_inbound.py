@@ -69,10 +69,11 @@ logger.info("[INBOUND] Agent initialized")
 # Pre-load VAD model at startup (avoids cold-load delay on first call)
 # Tuned for telephony: fast onset detection + balanced silence window
 _VAD = silero.VAD.load(
-    min_silence_duration=0.40,    # 400ms — faster than 550ms, still natural
-    activation_threshold=0.40,    # Balanced threshold
-    min_speech_duration=0.20,     # 200ms — quick detection
+    min_silence_duration=0.30,    # 300ms — snappier end-of-turn detection
+    activation_threshold=0.45,    # Slightly higher to ignore breath/noise triggers
+    min_speech_duration=0.10,     # 100ms — catch very short utterances fast
     sample_rate=16000,
+    padding_duration=0.05,        # Minimal padding — reduce trailing silence
 )
 
 
@@ -165,6 +166,16 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
                 },
             )
         logger.warning("[LLM] OpenRouter requested but OPENROUTER_API_KEY not set — falling back")
+
+    if provider == "cerebras":
+        model = ws_config.llm_model or os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
+        logger.info(f"[LLM] Cerebras — model={model}")
+        return openai.LLM(
+            base_url="https://api.cerebras.ai/v1",
+            api_key=os.getenv("CEREBRAS_API_KEY"),
+            model=model,
+            temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
+        )
 
     if provider == "groq":
         model = ws_config.llm_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
@@ -988,19 +999,21 @@ async def entrypoint(ctx: agents.JobContext):
             language=stt_lang,
             interim_results=True,   # Stream partial transcripts word-by-word as user speaks
             smart_format=True,
+            punctuate=False,       # Skip punctuation inference — saves ~30ms
+            no_delay=True,         # Don't buffer — stream tokens as they arrive
         ),
         llm=built_llm,
         tts=built_tts,
         turn_handling=TurnHandlingOptions(
             turn_detection="vad",
             endpointing={
-                "min_delay": 0.35,       # 350ms — faster response
-                "max_delay": 1.5,        # 1.5s — not too slow
-                "silence_duration_ms": 400,
+                "min_delay": 0.20,       # 200ms — near-instant response after speech ends
+                "max_delay": 1.0,        # 1s max wait — keep conversations snappy
+                "silence_duration_ms": 300,  # 300ms silence = speech done
             },
             interruption={
                 "mode": "adaptive",      # Clear TTS buffer on user barge-in
-                "min_words": 2,          # Only interrupt if user says 2+ words
+                "min_words": 1,          # Interrupt on even a single word (more responsive)
             },
         ),
     )
@@ -1027,12 +1040,15 @@ async def entrypoint(ctx: agents.JobContext):
         )
         logger.info(f"[INBOUND-RAG] ✅ RAG block built ({len(rag_block)} chars)")
 
-    # Filter out disabled custom functions (e.g. transfer_to_sales)
-    transfer_enabled = ws_config.is_function_enabled("transfer_to_sales")
+    # Filter out disabled custom functions (e.g. transfer_to_sales, book_appointment)
+    transfer_enabled    = ws_config.is_function_enabled("transfer_to_sales")
+    booking_enabled     = ws_config.is_function_enabled("book_appointment")
     logger.info(f"[INBOUND] transfer_to_sales enabled={transfer_enabled}")
+    logger.info(f"[INBOUND] book_appointment enabled={booking_enabled}")
     available_tools = [
         tool for name, tool in fnc_ctx.function_tools.items()
-        if transfer_enabled or name != "transfer_to_sales"
+        if (transfer_enabled or name != "transfer_to_sales")
+        and (booking_enabled  or name != "query_workspace_integration")
     ]
 
     agent_instance = InboundAssistant(

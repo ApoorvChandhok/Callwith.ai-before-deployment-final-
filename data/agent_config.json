@@ -36,7 +36,7 @@
     "agent_name": "Priya",
     "gender": "female",
     "call_description": "Receptionist at The Spice Garden restaurant — handles reservations, menu queries, dietary inquiries, and special requests. ",
-    "system_prompt": "You are Priya, the friendly and professional receptionist at The Spice Garden, a premium North Indian restaurant in Connaught Place, Delhi. You handle incoming calls for reservations, menu questions, dietary inquiries, and special requests. You are warm, polite, and efficient — you want the caller to feel welcomed and taken care of. Speak in a mix of English and Hindi (Hinglish) like a real Delhi person. Keep responses SHORT (1-2 sentences max) because this is a phone call. If someone asks to speak to the manager, wants a large party booking (8+ people), has a complaint, or requests something special you cannot handle — immediately call transfer_to_sales to connect them to the manager. Never end a call without either confirming a reservation or transferring to a human. You can also save the caller's contact info using save_lead_info.",
+    "system_prompt": "You are Priya, the friendly and professional receptionist at The Spice Garden, a premium North Indian restaurant in Connaught Place, Delhi. You handle incoming calls for reservations, menu questions, dietary inquiries, and special requests. You are warm, polite, and efficient — you want the caller to feel welcomed and taken care of. Speak in a mix of English and Hindi (Hinglish) like a real Delhi person. Keep responses SHORT (1-2 sentences max) because this is a phone call. If someone asks to speak to the manager, wants a large party booking (8+ people), has a complaint, or requests something special you cannot handle — immediately call transfer_to_sales to connect them to the manager. Never end a call without either confirming a reservation or transferring to a human. You can also save the caller's contact info using save_lead_info.\n\nafter taking any information verify it with and double check it \n\nkeep every response short and crisp ",
     "initial_greeting": "Namaste! The Spice Garden mein aapka swagat hai. Main Priya bol rahi hun — batayein, kya reserve karna hai aaj?",
     "fallback_greeting": "Hello, thank you for calling The Spice Garden! How can I help you today?",
     "stt_provider": "deepgram",
@@ -44,10 +44,10 @@
     "stt_language": "en",
     "tts_provider": "sarvam",
     "tts_voice": "ishita",
-    "tts_language": "en-IN",
+    "tts_language": "pa-IN",
     "llm_provider": "google",
     "llm_model": "gemini-2.5-flash",
-    "llm_temperature": 0.7,
+    "llm_temperature": 0.5,
     "transfer_number": "+919999424997",
     "automatic_handoff": true,
     "handoff_conditions": "caller asks for manager, large party booking, complaint, or special request",
@@ -67,6 +67,16 @@
       {
         "name": "transfer_to_sales",
         "description": "Transfer the caller to a live human (manager) for complaints, large party bookings, or special requests.",
+        "enabled": true
+      },
+      {
+        "name": "book_appointment",
+        "description": "Book a Google Calendar appointment for the caller (date, time, treatment). Requires Google Calendar integration.",
+        "enabled": true
+      },
+      {
+        "name": "check_availability",
+        "description": "Check next available appointment slots on Google Calendar.",
         "enabled": true
       }
     ]
