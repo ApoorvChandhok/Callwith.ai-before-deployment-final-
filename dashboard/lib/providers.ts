@@ -167,6 +167,15 @@ export const FALLBACK_CATALOG: ProviderCatalog = {
     },
   },
   llm: {
+    cerebras: {
+      label: "Cerebras (Ultra-Fast Inference)",
+      models: [
+        { value: "gemma-4-31b",    label: "Gemma 4 31B ⭐ (Recommended — Multimodal, ~1850 tok/s)" },
+        { value: "llama-3.3-70b",  label: "Llama 3.3 70B (Versatile)" },
+        { value: "llama3.1-70b",   label: "Llama 3.1 70B" },
+        { value: "llama3.1-8b",    label: "Llama 3.1 8B (Fastest)" },
+      ],
+    },
     groq: {
       label: "Groq (Fast Inference)",
       models: [

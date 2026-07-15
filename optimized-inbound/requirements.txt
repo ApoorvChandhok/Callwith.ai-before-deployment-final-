@@ -1,0 +1,7 @@
+# Same as main project, plus turn-detector for semantic endpointing
+-r ../requirements.txt
+
+# IMPROVEMENT 2: Semantic turn detection (context-aware endpointing)
+# Predicts "is this utterance complete" from prosody + content
+# Saves 200-500ms per turn vs naive VAD silence timeout
+livekit-plugins-turn-detector>=1.6.0
