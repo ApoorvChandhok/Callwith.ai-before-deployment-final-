@@ -106,7 +106,7 @@ export default function PremiumDashboard() {
           
           <div className="flex items-center justify-between mt-4">
             <button className="flex items-center gap-2 text-[12px] font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-              <CreditCard className="w-3.5 h-3.5" /> RapidX Outbound <ChevronDown className="w-3 h-3 ml-1" />
+              <CreditCard className="w-3.5 h-3.5" /> CallWith.ai Outbound <ChevronDown className="w-3 h-3 ml-1" />
             </button>
             <button className="flex items-center gap-2 text-[12px] font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
               All time <ChevronDown className="w-3 h-3 ml-1" />
@@ -135,7 +135,7 @@ export default function PremiumDashboard() {
             </div>
             
             <div className="relative z-10">
-              <span className="bg-white/20 backdrop-blur-md border border-white/30 text-white text-[10px] px-2 py-0.5 rounded-full font-medium">RapidX Business</span>
+              <span className="bg-white/20 backdrop-blur-md border border-white/30 text-white text-[10px] px-2 py-0.5 rounded-full font-medium">CallWith.ai Business</span>
             </div>
             
             <div className="relative z-10 flex justify-between items-end mt-4">

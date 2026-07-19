@@ -514,6 +514,22 @@ Best Regards,
         }));
         setBrochures((prev) => [...prev, ...withDesc]);
       }
+
+      // Also upload brochures to dynamic RAG for semantic search
+      for (let i = 0; i < files.length; i++) {
+        try {
+          const kbFormData = new FormData();
+          kbFormData.append("file", files[i]);
+          kbFormData.append("mode", "outbound");
+          await fetch("/api/knowledge-base/upload", {
+            method: "POST",
+            body: kbFormData,
+          });
+          console.log(`[RAG] Uploaded brochure ${files[i].name} to dynamic knowledge base`);
+        } catch (kbErr) {
+          console.warn(`[RAG] Dynamic KB upload failed for brochure:`, kbErr);
+        }
+      }
     } catch (err: any) {
       console.error("Brochure upload failed:", err);
       alert(`Upload failed: ${err.message}`);
@@ -578,6 +594,7 @@ Best Regards,
         // Check for duplicates by name
         if (ragFiles.some((f) => f.name === file.name)) continue;
 
+        // 1. Upload to old endpoint for inline content (backward compat)
         const formData = new FormData();
         formData.append("file", file);
 
@@ -591,6 +608,21 @@ Best Regards,
           continue;
         }
         setRagFiles((prev) => [...prev, { name: data.fileName, content: data.content }]);
+
+        // 2. Upload to new dynamic RAG (pgvector semantic search)
+        try {
+          const kbFormData = new FormData();
+          kbFormData.append("file", file);
+          kbFormData.append("mode", "outbound");
+          await fetch("/api/knowledge-base/upload", {
+            method: "POST",
+            body: kbFormData,
+          });
+          console.log(`[RAG] Uploaded ${file.name} to dynamic knowledge base`);
+        } catch (kbErr) {
+          console.warn(`[RAG] Dynamic KB upload failed for ${file.name}:`, kbErr);
+          // Non-fatal — inline content still works
+        }
       }
     } catch (err: any) {
       alert(`Upload error: ${err.message}`);
@@ -1589,6 +1621,7 @@ Best Regards,
                       className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500"
                     >
                       <option value="groq">Groq</option>
+                      <option value="cerebras">Cerebras (Free Tier)</option>
                       <option value="google">Google Gemini</option>
                       <option value="openai">OpenAI</option>
                     </select>
@@ -1605,6 +1638,14 @@ Best Regards,
                           <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
                           <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fast)</option>
                           <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                        </>
+                      )}
+                      {llmProvider === "cerebras" && (
+                        <>
+                          <option value="gemma-4-31b">Gemma 4 31B (Free, 128K ctx)</option>
+                          <option value="gpt-oss-120b">GPT-OSS 120B (Free, 65K ctx)</option>
+                          <option value="llama-3.3-70b">Llama 3.3 70B (Free)</option>
+                          <option value="llama-3.1-8b">Llama 3.1 8B (Free, Fast)</option>
                         </>
                       )}
                       {llmProvider === "google" && (

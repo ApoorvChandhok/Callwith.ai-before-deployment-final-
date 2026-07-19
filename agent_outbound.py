@@ -180,6 +180,19 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
             )
         logger.warning("[LLM] ❌ OpenRouter requested but OPENROUTER_API_KEY not set — falling back")
 
+    if provider == "cerebras":
+        cerebras_key = os.getenv("CEREBRAS_API_KEY")
+        model = ws_config.llm_model or os.getenv("CEREBRAS_MODEL", "gemma-4-31b")
+        if cerebras_key:
+            logger.info(f"[LLM] ✅ Cerebras — model={model}, speed=fastest")
+            return openai.LLM(
+                base_url="https://api.cerebras.ai/v1",
+                api_key=cerebras_key,
+                model=model,
+                temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
+            )
+        logger.warning("[LLM] ❌ Cerebras requested but CEREBRAS_API_KEY not set — falling back")
+
     if provider == "groq":
         groq_key = os.getenv("GROQ_API_KEY")
         model = ws_config.llm_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
@@ -476,7 +489,11 @@ class OutboundTools(llm.ToolContext):
         req = _req.Request(
             f"{dashboard_url}/api/tools/execute",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                # SECURITY: send shared secret so the gateway accepts this request
+                "x-tool-gateway-secret": os.getenv("TOOL_GATEWAY_SECRET", ""),
+            },
             method="POST",
         )
         try:
@@ -515,7 +532,11 @@ class OutboundTools(llm.ToolContext):
         req = urllib.request.Request(
             f"{dashboard_url}/api/tools/execute",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                # SECURITY: send shared secret so the gateway accepts this request
+                "x-tool-gateway-secret": os.getenv("TOOL_GATEWAY_SECRET", ""),
+            },
             method="POST",
         )
         try:
@@ -550,7 +571,7 @@ class OutboundTools(llm.ToolContext):
 
 class OutboundAssistant(Agent):
     def __init__(self, ws_config: WorkspaceAgentConfig, tools: list, user_prompt: str = None, tts_language: str = None, is_campaign: bool = False, call_connected_event: asyncio.Event = None, has_dynamic_kb: bool = False):
-        
+
         logger.info(f"[OUTBOUND-DEBUG] OutboundAssistant init. is_campaign={is_campaign}")
         logger.info(f"[OUTBOUND-DEBUG] user_prompt: {repr(user_prompt)}")
         logger.info(f"[OUTBOUND-DEBUG] base system_prompt: {repr(ws_config.system_prompt)}")
@@ -599,6 +620,9 @@ class OutboundAssistant(Agent):
             "5. SHOW INTEREST: Be genuinely curious about what the customer wants. "
             "Ask follow-up questions. Show excitement when they share preferences.\n"
             "6. ENERGY: Sound enthusiastic and helpful — like you really want to help them find the right car.\n"
+        )
+
+        instructions += (
             "7. NATURAL FLOW: Match the caller's energy and language. Be conversational, not robotic.\n"
             "8. NEVER SILENT: If you don't know what to say, ask a question. Never leave dead air.\n"
         )

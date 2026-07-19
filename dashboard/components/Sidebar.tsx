@@ -303,7 +303,7 @@ export default function Sidebar() {
                 >
                   {/* Front */}
                   <div className="absolute inset-0 flex items-center" style={{ transform: "translateZ(12px)" }}>
-                    <span className="text-[15px] font-bold tracking-tight gradient-text whitespace-nowrap">RapidX</span>
+                    <span className="text-[15px] font-bold tracking-tight gradient-text whitespace-nowrap">CallWith.ai</span>
                   </div>
                   {/* Bottom */}
                   <div className="absolute inset-0 flex items-center" style={{ transform: "rotateX(90deg) translateZ(12px)" }}>

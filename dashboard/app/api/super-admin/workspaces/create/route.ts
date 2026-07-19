@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { SipClient } from 'livekit-server-sdk'
 import { SIPTransport, RoomConfiguration } from '@livekit/protocol'
+import { createCredential } from '@/lib/credentials-store'
 
 export const dynamic = 'force-dynamic'
 
@@ -153,12 +154,22 @@ export async function POST(request: Request) {
     livekit_trunk_id:     outboundTrunkId,
     inbound_trunk_id:     inboundTrunkId,
     dispatch_rule_id:     dispatchRuleId,
-    sip_domain:           sip_domain ?? null,
-    vobiz_username:       vobiz_username ?? null,
-    vobiz_password:       vobiz_password ?? null,
     agent_name_outbound:  'outbound-caller',
     agent_name_inbound:   'inbound-caller',
   })
+
+  // Encrypt Vobiz Credentials
+  if (vobiz_username || vobiz_password || sip_domain) {
+    try {
+      await createCredential(businessId, "Vobiz SIP Account", "vobiz", {
+        username: vobiz_username || "",
+        password: vobiz_password || "",
+        domain: sip_domain || "sip.vobiz.com",
+      });
+    } catch (err) {
+      console.error("[create-workspace] Error storing encrypted credentials:", err);
+    }
+  }
 
   // ── 5. Create the invited admin profile ──────────────────────────────────────
   const { error: profileError } = await supabase.from('profiles').insert({

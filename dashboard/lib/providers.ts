@@ -199,6 +199,15 @@ export const FALLBACK_CATALOG: ProviderCatalog = {
         { value: "google/gemma-2-9b-it", label: "Gemma 2 9B" },
       ],
     },
+    cerebras: {
+      label: "Cerebras (Fast Inference — Free Tier)",
+      models: [
+        { value: "gemma-4-31b", label: "Gemma 4 31B (Free, 128K ctx)" },
+        { value: "gpt-oss-120b", label: "GPT-OSS 120B (Free, 65K ctx)" },
+        { value: "llama-3.3-70b", label: "Llama 3.3 70B (Free, 128K ctx)" },
+        { value: "llama-3.1-8b", label: "Llama 3.1 8B (Free, Fast)" },
+      ],
+    },
     google: {
       label: "Google (Gemini)",
       models: [

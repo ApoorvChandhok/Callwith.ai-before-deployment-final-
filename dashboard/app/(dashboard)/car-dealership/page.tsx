@@ -210,6 +210,12 @@ const LLM_OPTIONS: Record<string, { value: string; label: string }[]> = {
     { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B (Fast)" },
     { value: "mixtral-8x7b-32768", label: "Mixtral 8x7B" },
   ],
+  cerebras: [
+    { value: "gemma-4-31b", label: "Gemma 4 31B (Free, 128K ctx)" },
+    { value: "gpt-oss-120b", label: "GPT-OSS 120B (Free, 65K ctx)" },
+    { value: "llama-3.3-70b", label: "Llama 3.3 70B (Free)" },
+    { value: "llama-3.1-8b", label: "Llama 3.1 8B (Free, Fast)" },
+  ],
   google: [
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
     { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
@@ -423,6 +429,8 @@ export default function CarDealershipPage() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (ragFiles.some((f) => f.name === file.name)) continue;
+
+        // 1. Upload to old endpoint for inline content (backward compat)
         const formData = new FormData();
         formData.append("file", file);
         const res = await fetch("/api/campaign/upload-rag", {
@@ -435,6 +443,21 @@ export default function CarDealershipPage() {
           continue;
         }
         setRagFiles((prev) => [...prev, { name: data.fileName, content: data.content }]);
+
+        // 2. Upload to new dynamic RAG (pgvector semantic search)
+        try {
+          const kbFormData = new FormData();
+          kbFormData.append("file", file);
+          kbFormData.append("mode", "outbound");
+          await fetch("/api/knowledge-base/upload", {
+            method: "POST",
+            body: kbFormData,
+          });
+          console.log(`[RAG] Uploaded ${file.name} to dynamic knowledge base`);
+        } catch (kbErr) {
+          console.warn(`[RAG] Dynamic KB upload failed for ${file.name}:`, kbErr);
+          // Non-fatal — inline content still works
+        }
       }
     } catch (err: any) {
       alert(`Upload error: ${err.message}`);
@@ -1150,6 +1173,7 @@ export default function CarDealershipPage() {
                       className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
                     >
                       <option value="groq">Groq</option>
+                      <option value="cerebras">Cerebras (Free Tier)</option>
                       <option value="google">Google Gemini</option>
                       <option value="openai">OpenAI</option>
                     </select>

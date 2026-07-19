@@ -36,26 +36,28 @@ export async function GET(req: NextRequest) {
     // otherwise the user will get a 401 when testing in browser.
     // If the user's setup doesn't strictly use auth right now, they might be getting blocked here.
     if (!workspaceId) {
-        console.warn("No workspace ID found for user, but proceeding with a default fallback for local dev.");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const safeWorkspaceId = workspaceId || "00000000-0000-0000-0000-000000000000";
 
     const { data, error } = await supabaseAdmin
         .from("campaign_templates")
         .select("id, name, config, created_at, updated_at")
-        .eq("workspace_id", safeWorkspaceId)
+        .eq("workspace_id", workspaceId)
         .order("updated_at", { ascending: false });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+        console.error("[campaign/templates GET] DB error:", error.message);
+        return NextResponse.json({ error: "Failed to load templates" }, { status: 500 });
+    }
     return NextResponse.json({ templates: data ?? [] });
 }
 
 // POST /api/campaign/templates — create or update a template
 // Body: { name: string, config: object, id?: string (for update) }
 export async function POST(req: NextRequest) {
-    let workspaceId = await getWorkspaceId(req);
+    const workspaceId = await getWorkspaceId(req);
     if (!workspaceId) {
-        workspaceId = "00000000-0000-0000-0000-000000000000";
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
@@ -72,7 +74,10 @@ export async function POST(req: NextRequest) {
             .eq("workspace_id", workspaceId)
             .select()
             .single();
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) {
+            console.error("[campaign/templates POST update] DB error:", error.message);
+            return NextResponse.json({ error: "Failed to update template" }, { status: 500 });
+        }
         return NextResponse.json({ template: data });
     }
 
@@ -83,15 +88,18 @@ export async function POST(req: NextRequest) {
         .select()
         .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+        console.error("[campaign/templates POST create] DB error:", error.message);
+        return NextResponse.json({ error: "Failed to create template" }, { status: 500 });
+    }
     return NextResponse.json({ template: data });
 }
 
 // DELETE /api/campaign/templates?id=xxx — delete a template
 export async function DELETE(req: NextRequest) {
-    let workspaceId = await getWorkspaceId(req);
+    const workspaceId = await getWorkspaceId(req);
     if (!workspaceId) {
-        workspaceId = "00000000-0000-0000-0000-000000000000";
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const id = req.nextUrl.searchParams.get("id");
@@ -103,6 +111,9 @@ export async function DELETE(req: NextRequest) {
         .eq("id", id)
         .eq("workspace_id", workspaceId);
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+        console.error("[campaign/templates DELETE] DB error:", error.message);
+        return NextResponse.json({ error: "Failed to delete template" }, { status: 500 });
+    }
     return NextResponse.json({ success: true });
 }

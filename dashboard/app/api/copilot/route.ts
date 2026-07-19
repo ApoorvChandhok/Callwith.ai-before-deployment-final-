@@ -1,4 +1,4 @@
-import { createOpenAI } from "@ai-sdk/openai";
+﻿import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
 // Initialize Groq provider using the OpenAI SDK wrapper
@@ -7,7 +7,7 @@ const groq = createOpenAI({
   apiKey: process.env.GROQ_API_KEY || "",
 });
 
-const BASE_SYSTEM_PROMPT = `You are the RapidX AI Assistant, a helpful and deeply technical copilot embedded inside the RapidX Voice AI dashboard. 
+const BASE_SYSTEM_PROMPT = `You are the CallWith.ai AI Assistant, a helpful and deeply technical copilot embedded inside the CallWith.ai Voice AI dashboard.
 Your goal is to help users navigate the dashboard, explain complex settings, debug SIP/telephony errors, and build workflows.
 
 The system you are helping them use is a dual-agent Voice AI platform:
@@ -76,6 +76,6 @@ Use this context to inform your answers if they ask questions about what they ar
     });
   } catch (error: any) {
     console.error("Copilot API Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
   }
 }

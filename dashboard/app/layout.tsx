@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "RapidX Dashboard",
-  description: "AI Voice Agent and Workflow Builder",
+  title: "CallWith.ai Dashboard",
+  description: "AI Voice Agent Platform",
 };
 
 // Root layout: only wraps html/body/fonts.

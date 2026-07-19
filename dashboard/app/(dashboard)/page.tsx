@@ -1,20 +1,12 @@
 import { getOverviewStats } from "@/lib/actions";
 export const dynamic = "force-dynamic";
-import { Phone, CheckCircle, Hash, TrendingUp, ChevronRight } from "lucide-react";
+import { Phone, CheckCircle, Hash, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import GlobeWrapper from "@/components/GlobeWrapper";
 import DashboardCharts from "@/components/DashboardCharts";
 import TiltCard from "@/components/TiltCard";
 import FormattedCurrency, { CurrencySymbol } from "@/components/FormattedCurrency";
-
-// Helper to format currency
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0
-  }).format(amount);
-};
+import DashboardHeader from "@/components/DashboardHeader";
 
 export default async function Overview() {
   const stats = await getOverviewStats();
@@ -82,7 +74,8 @@ export default async function Overview() {
 
   return (
     <div className="space-y-6 min-h-screen pb-10 w-full max-w-7xl mx-auto">
-      {/* ROW 1: 6 Summary Cards */}
+      {/* ROW 1: Date Picker + 6 Summary Cards */}
+      <DashboardHeader logs={stats.allLogs || []} />
       <div className="grid gap-5 md:grid-cols-3 lg:grid-cols-6">
         {statCards.map((card) => {
           const Icon = card.icon;
@@ -139,9 +132,9 @@ export default async function Overview() {
                 <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200" style={{ transform: "translateZ(40px)" }}>
                   <Link
                     href={card.link}
-                    className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-white transition-colors flex items-center font-bold uppercase tracking-wider"
+                    className="text-[10px] text-blue-500 hover:text-blue-400 font-semibold flex items-center"
                   >
-                    Logs <ChevronRight className="w-3 h-3 ml-0.5" />
+                    View call logs <span className="ml-1">↗</span>
                   </Link>
                 </div>
               )}
@@ -151,19 +144,19 @@ export default async function Overview() {
       </div>
 
       {/* ROW 2 & 3: Charts */}
-      <div className="glass-card p-0 overflow-hidden" style={{ animation: `fade-in-up 0.5s 0.3s cubic-bezier(0.4,0,0.2,1) both` }}>
-        <DashboardCharts stats={stats} />
+      <div className="glass-card p-0 overflow-hidden" style={{ animation: `fade-in-up 0.5s 0.15s cubic-bezier(0.4,0,0.2,1) both` }}>
+        <DashboardCharts stats={stats} logs={stats.allLogs || []} />
       </div>
 
       {/* Section title */}
-      <div style={{ animation: `fade-in-up 0.5s 0.4s cubic-bezier(0.4,0,0.2,1) both` }}>
+      <div style={{ animation: `fade-in-up 0.5s 0.25s cubic-bezier(0.4,0,0.2,1) both` }}>
         <h2 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mt-8 mb-3">
           Account & Infrastructure
         </h2>
       </div>
 
       {/* ROW 4: Globe */}
-      <div className="glass-card p-6" style={{ animation: `fade-in-up 0.5s 0.45s cubic-bezier(0.4,0,0.2,1) both` }}>
+      <div className="glass-card p-6" style={{ animation: `fade-in-up 0.5s 0.3s cubic-bezier(0.4,0,0.2,1) both` }}>
         <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4">
           Global Call Distribution
         </h3>

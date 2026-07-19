@@ -117,7 +117,7 @@ export async function POST(request: Request) {
             tts_language:     body.ttsLanguage,
             tts_speed:        body.ttsSpeed,
             workspace_id:     workspaceId,
-            triggered_by:     user.email,
+            triggered_by:     user.id,  // SECURITY: use opaque ID, not email (email leaks into LiveKit room metadata visible to SIP parties)
             // Campaign / lead enrichment (populated by BulkDialer & Workflow engine)
             lead_name:        leadName,
             lead_email:       leadEmail,
@@ -177,6 +177,6 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error("Error dispatching call:", error);
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

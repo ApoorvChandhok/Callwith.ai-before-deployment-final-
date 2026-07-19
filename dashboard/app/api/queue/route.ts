@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { roomService, sipClient } from '@/lib/server-utils';
 
 export async function POST(request: Request) {
@@ -64,6 +64,6 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error("Queue error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

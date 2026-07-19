@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 // ── GET /api/real-estate/crm-leads ──────────────────────────────────────────
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error("[CRM Leads]", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 
     return NextResponse.json({ leads: leads || [] });

@@ -168,14 +168,17 @@ def _build_llm(ws_config: WorkspaceAgentConfig, provider_override: str = None):
         logger.warning("[LLM] OpenRouter requested but OPENROUTER_API_KEY not set — falling back")
 
     if provider == "cerebras":
-        model = ws_config.llm_model or os.getenv("CEREBRAS_MODEL", "llama3.1-8b")
-        logger.info(f"[LLM] Cerebras — model={model}")
-        return openai.LLM(
-            base_url="https://api.cerebras.ai/v1",
-            api_key=os.getenv("CEREBRAS_API_KEY"),
-            model=model,
-            temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
-        )
+        cerebras_key = os.getenv("CEREBRAS_API_KEY")
+        model = ws_config.llm_model or os.getenv("CEREBRAS_MODEL", "gemma-4-31b")
+        if cerebras_key:
+            logger.info(f"[LLM] Cerebras — model={model}")
+            return openai.LLM(
+                base_url="https://api.cerebras.ai/v1",
+                api_key=cerebras_key,
+                model=model,
+                temperature=float(os.getenv("GROQ_TEMPERATURE", str(ws_config.llm_temperature))),
+            )
+        logger.warning("[LLM] Cerebras requested but CEREBRAS_API_KEY not set — falling back")
 
     if provider == "groq":
         model = ws_config.llm_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
@@ -544,7 +547,11 @@ class InboundTools(llm.ToolContext):
             req = urllib.request.Request(
                 gateway_url,
                 data=payload,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    # SECURITY: send shared secret so the gateway accepts this request
+                    "x-tool-gateway-secret": os.getenv("TOOL_GATEWAY_SECRET", ""),
+                },
                 method="POST",
             )
             loop = asyncio.get_event_loop()
@@ -592,7 +599,11 @@ class InboundTools(llm.ToolContext):
         req = urllib.request.Request(
             gateway_url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                # SECURITY: send shared secret so the gateway accepts this request
+                "x-tool-gateway-secret": os.getenv("TOOL_GATEWAY_SECRET", ""),
+            },
             method="POST",
         )
         try:

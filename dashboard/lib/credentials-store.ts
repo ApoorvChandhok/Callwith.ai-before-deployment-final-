@@ -8,9 +8,8 @@
  * Client-side code should use credential-types.ts for types.
  */
 
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
+import { createClient } from "@supabase/supabase-js";
 import type { CredentialType, CredentialField, CredentialDefinition } from "./credential-types";
 export type { CredentialType, CredentialField, CredentialDefinition, CredentialMetadata } from "./credential-types";
 import type { CredentialMetadata } from "./credential-types";
@@ -34,8 +33,6 @@ export interface StoredCredential {
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-const DATA_DIR = path.join(process.cwd(), "..", "data");
-const CREDENTIALS_FILE = path.join(DATA_DIR, "credentials.json");
 const ENCRYPTION_KEY_ENV = "CREDENTIALS_ENCRYPTION_KEY";
 
 function getEncryptionKey(): Buffer {
@@ -43,9 +40,23 @@ function getEncryptionKey(): Buffer {
   if (keyHex && keyHex.length === 64) {
     return Buffer.from(keyHex, "hex");
   }
-  // Derive a key from a passphrase or generate a random one
-  const passphrase = process.env.SESSION_SECRET || "default-dev-key-change-in-production";
-  return crypto.scryptSync(passphrase, "n8n-credentials-salt", 32);
+  // Derive from SESSION_SECRET if available
+  const passphrase = process.env.SESSION_SECRET;
+  if (passphrase) {
+    return crypto.scryptSync(passphrase, "n8n-credentials-salt", 32);
+  }
+  // SECURITY: Never use a hardcoded fallback in production
+  // Fail hard so the misconfiguration is caught immediately at deploy time
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `[credentials-store] FATAL: Neither CREDENTIALS_ENCRYPTION_KEY nor SESSION_SECRET is set. ` +
+      `All credential operations are blocked in production to prevent data exposure. ` +
+      `Set CREDENTIALS_ENCRYPTION_KEY (64-char hex) in your environment.`
+    );
+  }
+  // Development only: use a deterministic but clearly dev-only key
+  console.warn("[credentials-store] ⚠️  No encryption key configured — using dev-only key. Set CREDENTIALS_ENCRYPTION_KEY in .env!");
+  return crypto.scryptSync("dev-only-unsafe-key-set-env-in-production", "n8n-credentials-salt", 32);
 }
 
 function encrypt(plaintext: string): string {
@@ -70,22 +81,40 @@ function decrypt(ciphertext: string): string {
   return decrypted;
 }
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error("[credentials-store] Missing Supabase URL or Service Role Key");
+  }
+  return createClient(url, key, { auth: { persistSession: false } });
 }
 
-function readCredentials(): StoredCredential[] {
-  try {
-    if (!fs.existsSync(CREDENTIALS_FILE)) return [];
-    return JSON.parse(fs.readFileSync(CREDENTIALS_FILE, "utf-8"));
-  } catch {
+async function readCredentials(workspaceId: string): Promise<StoredCredential[]> {
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("workspace_config")
+    .select("encrypted_credentials")
+    .eq("business_id", workspaceId)
+    .single();
+
+  if (error || !data || !data.encrypted_credentials) {
     return [];
   }
+  return data.encrypted_credentials as StoredCredential[];
 }
 
-function writeCredentials(credentials: StoredCredential[]) {
-  ensureDataDir();
-  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(credentials, null, 2), "utf-8");
+async function writeCredentials(workspaceId: string, credentials: StoredCredential[]): Promise<void> {
+  const admin = getAdminClient();
+  const { error } = await admin
+    .from("workspace_config")
+    .update({ encrypted_credentials: credentials })
+    .eq("business_id", workspaceId);
+
+  if (error) {
+    console.error("[credentials-store] Error saving credentials:", error.message);
+    throw new Error("Failed to save credentials");
+  }
 }
 
 function generateId(): string {
@@ -94,16 +123,18 @@ function generateId(): string {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function listCredentials(): CredentialMetadata[] {
-  return readCredentials().map(({ data: _, ...meta }) => meta);
+export async function listCredentials(workspaceId: string): Promise<CredentialMetadata[]> {
+  const all = await readCredentials(workspaceId);
+  return all.map(({ data: _, ...meta }) => meta);
 }
 
-export function getCredential(id: string): StoredCredential | null {
-  return readCredentials().find((c) => c.id === id) || null;
+export async function getCredential(workspaceId: string, id: string): Promise<StoredCredential | null> {
+  const all = await readCredentials(workspaceId);
+  return all.find((c) => c.id === id) || null;
 }
 
-export function getCredentialDecrypted(id: string): { metadata: CredentialMetadata; data: Record<string, any> } | null {
-  const cred = getCredential(id);
+export async function getCredentialDecrypted(workspaceId: string, id: string): Promise<{ metadata: CredentialMetadata; data: Record<string, any> } | null> {
+  const cred = await getCredential(workspaceId, id);
   if (!cred) return null;
 
   const decryptedData: Record<string, any> = {};
@@ -119,11 +150,12 @@ export function getCredentialDecrypted(id: string): { metadata: CredentialMetada
   return { metadata, data: decryptedData };
 }
 
-export function createCredential(
+export async function createCredential(
+  workspaceId: string,
   name: string,
   type: CredentialType,
   data: Record<string, any>
-): CredentialMetadata {
+): Promise<CredentialMetadata> {
   const now = new Date().toISOString();
   const encryptedData: Record<string, any> = {};
   for (const [key, value] of Object.entries(data)) {
@@ -139,19 +171,20 @@ export function createCredential(
     updatedAt: now,
   };
 
-  const all = readCredentials();
+  const all = await readCredentials(workspaceId);
   all.push(credential);
-  writeCredentials(all);
+  await writeCredentials(workspaceId, all);
 
   const { data: _, ...metadata } = credential;
   return metadata;
 }
 
-export function updateCredential(
+export async function updateCredential(
+  workspaceId: string,
   id: string,
   updates: Partial<Pick<StoredCredential, "name" | "type" | "data">>
-): CredentialMetadata | null {
-  const all = readCredentials();
+): Promise<CredentialMetadata | null> {
+  const all = await readCredentials(workspaceId);
   const idx = all.findIndex((c) => c.id === id);
   if (idx === -1) return null;
 
@@ -172,26 +205,26 @@ export function updateCredential(
     updatedAt: now,
   };
 
-  writeCredentials(all);
+  await writeCredentials(workspaceId, all);
   const { data: _, ...metadata } = all[idx];
   return metadata;
 }
 
-export function deleteCredential(id: string): boolean {
-  const all = readCredentials();
+export async function deleteCredential(workspaceId: string, id: string): Promise<boolean> {
+  const all = await readCredentials(workspaceId);
   const filtered = all.filter((c) => c.id !== id);
   if (filtered.length === all.length) return false;
-  writeCredentials(filtered);
+  await writeCredentials(workspaceId, filtered);
   return true;
 }
 
-export function testCredential(id: string, success: boolean, error?: string): void {
-  const all = readCredentials();
+export async function testCredential(workspaceId: string, id: string, success: boolean, error?: string): Promise<void> {
+  const all = await readCredentials(workspaceId);
   const idx = all.findIndex((c) => c.id === id);
   if (idx === -1) return;
 
   all[idx].testedAt = new Date().toISOString();
   all[idx].testStatus = success ? "success" : "error";
   all[idx].testError = error;
-  writeCredentials(all);
-}
+  await writeCredentials(workspaceId, all);
+}

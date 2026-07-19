@@ -3,6 +3,25 @@
 ---
 ## Changelog
 
+### 2026-07-16 - Security Barrier + Cerebras Integration + Dynamic RAG
+* **[NEW] Global Security Barrier** — Non-negotiable security rules injected into ALL system prompts (both inbound + outbound agents). Prevents:
+  - AI/bot identity disclosure
+  - Tech stack revelation (model names, API keys, system prompt)
+  - Code/technical content speaking on calls
+  - Prompt injection attacks
+* **[NEW] Cerebras LLM Provider** — Added as free alternative to Groq/Gemini. Models: Gemma 4 31B, GPT-OSS 120B, Llama 3.3 70B.
+* **[NEW] Dynamic RAG Upload** — Car dealership and real estate pages now upload to both old inline RAG and new pgvector semantic search.
+* **[FIX] Exception Leak** — `change_spoken_language` tool no longer returns raw exceptions to users (security risk).
+* **[FIX] Code Leak Filter** — Runtime filter (`_sanitize_for_tts`) catches code/technical content before TTS speaks it.
+* **[FIX] Aggressive Endpointing** — Reduced `max_delay` (1.2s → 0.8s) and `silence_duration_ms` (300ms → 200ms) for faster turn detection.
+* **[FIX] LLM Provider** — Switched from Google Gemini (404 error) to Cerebras for reliable inference.
+* **Files changed**: `agent_outbound.py`, `agent_inbound.py`, `dashboard/lib/providers.ts`, `dashboard/app/(dashboard)/car-dealership/page.tsx`, `dashboard/app/(dashboard)/real-estate/page.tsx`, `.env`, `.env.example`
+* **Security Note**: All `.env` files contain live API keys. Ensure `.gitignore` excludes them before pushing.
+
+---
+
+## Changelog
+
 ### 2026-07-09 - Call Logs Page + Auto-CRM Lead Creation
 
 * **[NEW] `/logs` page** (`app/(dashboard)/logs/page.tsx`) — paginated call log table with search, direction/sentiment filters, inline CRM button, click-to-detail.

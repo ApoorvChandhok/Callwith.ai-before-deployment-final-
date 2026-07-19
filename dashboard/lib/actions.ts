@@ -393,9 +393,11 @@ export async function getOverviewStats() {
 
   const answeredCalls = logs.filter((l: any) => l.duration > 0 || l.status === "NORMAL_CLEARING" || l.status === "Completed").length;
   const pickupRate = totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0;
-  
-  const sipTrunkCalls = logs.filter((l: any) => l.sip_call_id).length || totalCalls;
-  const voiceApiCalls = totalCalls - sipTrunkCalls;
+
+  // SIP Trunk calls = outbound calls (made via SIP trunk)
+  // Voice API calls = inbound calls (received via Voice API)
+  const sipTrunkCalls = logs.filter((l: any) => l.direction === "outbound" || l.call_direction === "outbound").length || totalCalls;
+  const voiceApiCalls = logs.filter((l: any) => l.direction === "inbound" || l.call_direction === "inbound").length;
   
   // Calculate chart data for last 30 days
   const today = new Date();
@@ -408,8 +410,9 @@ export async function getOverviewStats() {
   const usageChartData = [];
   const costChartData = [];
   const inboundOutboundData = [];
-  
-  for(let i=29; i>=0; i--) {
+
+  // Generate 90 days of chart data (to support wider date range selection)
+  for(let i=89; i>=0; i--) {
     const d = new Date();
     d.setDate(today.getDate() - i);
     const dateStr = getDayStr(d);
@@ -434,8 +437,10 @@ export async function getOverviewStats() {
     const dayTranscriptionCost = dayLogs.reduce((acc: number, l: any) => acc + (l.transcription_cost || 0), 0);
     const dayNccCost = dayLogs.reduce((acc: number, l: any) => acc + (l.ncc_cost || 0), 0);
     const dayDidCost = dayLogs.reduce((acc: number, l: any) => acc + (l.did_cost || 0), 0);
-    
-    usageChartData.push({ date: displayDate, totalCalls: dayLogs.length, sipTrunk: dayLogs.length, voiceApi: 0 });
+
+    const daySipTrunk = dayLogs.filter((l: any) => l.direction === "outbound" || l.call_direction === "outbound").length;
+    const dayVoiceApi = dayLogs.filter((l: any) => l.direction === "inbound" || l.call_direction === "inbound").length;
+    usageChartData.push({ date: displayDate, totalCalls: dayLogs.length, sipTrunk: daySipTrunk, voiceApi: dayVoiceApi });
     costChartData.push({ 
       date: displayDate, 
       cdr: dayCost, 
@@ -493,7 +498,9 @@ export async function getOverviewStats() {
     const hNcc = hourLogs.reduce((acc: number, l: any) => acc + (l.ncc_cost || 0), 0);
     const hDid = hourLogs.reduce((acc: number, l: any) => acc + (l.did_cost || 0), 0);
     
-    hourlyUsageData.push({ date: displayHour, totalCalls: hourLogs.length, sipTrunk: hourLogs.length, voiceApi: 0 });
+    const hourSipTrunk = hourLogs.filter((l: any) => l.direction === "outbound" || l.call_direction === "outbound").length;
+    const hourVoiceApi = hourLogs.filter((l: any) => l.direction === "inbound" || l.call_direction === "inbound").length;
+    hourlyUsageData.push({ date: displayHour, totalCalls: hourLogs.length, sipTrunk: hourSipTrunk, voiceApi: hourVoiceApi });
     hourlyCostData.push({ 
       date: displayHour, 
       cdr: hourCost, 
@@ -511,10 +518,11 @@ export async function getOverviewStats() {
     });
   }
   
+  // Active Numbers = unique caller_id_number (SIP trunk DIDs used for outbound)
   const activeNumbers = new Set(
-    logs.filter((l: any) => l.direction === "inbound" && l.phone_number)
-        .map((l: any) => l.phone_number)
-  ).size || 1; // Fallback to 1 if no inbound calls yet
+    logs.filter((l: any) => l.caller_id_number || l.from_number)
+        .map((l: any) => l.caller_id_number || l.from_number)
+  ).size || 1; // Fallback to 1 if no data
   
   // Calculate dynamic changes
   const now = new Date();
@@ -579,7 +587,8 @@ export async function getOverviewStats() {
     inboundOutboundData,
     hourlyUsageData,
     hourlyCostData,
-    hourlyInboundOutboundData
+    hourlyInboundOutboundData,
+    allLogs: logs // Pass all logs for client-side date filtering
   };
 }
 

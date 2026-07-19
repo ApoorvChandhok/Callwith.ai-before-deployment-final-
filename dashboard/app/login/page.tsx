@@ -60,7 +60,7 @@ export default function LoginPage() {
             </div>
 
             <h1 className="text-2xl font-semibold text-white tracking-tight">
-              RapidX Platform
+              CallWith.ai Platform
             </h1>
             <p className="text-sm text-white/40 mt-2">
               Invite-only access. Sign in with your Google account.

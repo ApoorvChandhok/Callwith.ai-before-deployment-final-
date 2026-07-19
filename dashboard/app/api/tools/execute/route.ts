@@ -8,18 +8,31 @@ const DATA_DIR = path.join(process.cwd(), "..", "data");
 // Tool Gateway — /api/tools/execute
 // ---------------------------------------------------------------------------
 // Called by the Python voice agent during active calls via query_workspace_integration.
-// Resolves any action_name → executes the matching integration → returns a
-// natural-language string the agent can speak back to the caller immediately.
+// SECURITY: Requires x-tool-gateway-secret header matching TOOL_GATEWAY_SECRET env var.
+// This prevents any unauthenticated caller from booking appointments, sending
+// emails, or consuming API quota via this endpoint.
 //
-// To add a new real-time integration:
-//   1. Add a handler function below.
-//   2. Add a case to the switch in the POST handler.
-//   3. Zero Python changes needed.
+// The Python agent sets this header on every call. Browser requests without
+// the correct secret are rejected with 401 before any action is executed.
 // ---------------------------------------------------------------------------
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+const TOOL_GATEWAY_SECRET = process.env.TOOL_GATEWAY_SECRET || "";
+
+// ── Auth helper ──────────────────────────────────────────────────────────────
+function validateGatewaySecret(req: NextRequest): boolean {
+  if (!TOOL_GATEWAY_SECRET) {
+    // If secret not configured, block ALL requests in production
+    if (process.env.NODE_ENV === "production") return false;
+    // In dev without config, allow localhost-only
+    const host = req.headers.get("host") || "";
+    return host.startsWith("localhost") || host.startsWith("127.");
+  }
+  const incoming = req.headers.get("x-tool-gateway-secret");
+  return incoming === TOOL_GATEWAY_SECRET;
+}
 
 // ── Helper: fetch integration tokens from Supabase ──────────────────────────
 async function getIntegrationTokens(
@@ -690,6 +703,16 @@ async function handleSearchKnowledgeBase(
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
+  // ── SECURITY: Validate gateway secret before any processing ─────────────
+  // The Python agent sets x-tool-gateway-secret on every request.
+  // Browser-originating requests (no secret) are rejected immediately.
+  if (!validateGatewaySecret(req)) {
+    const ip = req.ip || req.headers.get("x-forwarded-for") || "unknown";
+    const userAgent = req.headers.get("user-agent") || "unknown";
+    console.warn(`[tool-gateway] ⛔ Rejected request — missing or invalid x-tool-gateway-secret. IP: ${ip}, User-Agent: ${userAgent}`);
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: {
     workspace_id?: string;
     action_name?: string;
@@ -709,7 +732,8 @@ export async function POST(req: NextRequest) {
   }
 
   const workspaceId = workspace_id || "default";
-  console.log(`[tool-gateway] → action=${action_name} workspace=${workspaceId}`, parameters);
+  console.log(`[tool-gateway] → action=${action_name} workspace=${workspaceId}`);
+  // NOTE: parameters not logged at INFO level to avoid logging customer PII
 
   try {
     let result: string;
@@ -740,12 +764,6 @@ export async function POST(req: NextRequest) {
       // case "send_whatsapp_confirmation":
       //   result = await handleSendWhatsApp(parameters, workspaceId);
       //   break;
-      // case "lookup_patient_records":
-      //   result = await handleLookupPatient(parameters, workspaceId);
-      //   break;
-      // case "check_insurance_eligibility":
-      //   result = await handleInsuranceCheck(parameters, workspaceId);
-      //   break;
       // ────────────────────────────────────────────────────────────────────
 
       default:
@@ -755,8 +773,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ result });
   } catch (err) {
+    // Log full error server-side; return speakable fallback to caller — never expose internals
     console.error("[tool-gateway] ❌ Unhandled error in action:", action_name, err);
-    // Always return 200 with speakable Hinglish — never expose technical errors to the caller
     return NextResponse.json(
       { result: "Kripaya ek second wait karein — main aapki request process kar rahi hoon. Hamaari team aapko jald confirm karegi." },
       { status: 200 }

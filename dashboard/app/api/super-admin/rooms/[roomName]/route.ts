@@ -25,7 +25,7 @@ export async function DELETE(request: Request, context: any) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        console.log(`[KILL] Super admin ${user.email} terminating room: ${roomName}`);
+        console.log(`[KILL] Super admin ${user.id} terminating room: ${roomName}`);
 
         // ── STEP 0: Read room metadata BEFORE deleting (to get workspace_id) ───
         let workspaceId: string | null = null;
@@ -107,6 +107,6 @@ export async function DELETE(request: Request, context: any) {
 
     } catch (error: any) {
         console.error("[KILL] Error terminating room:", error);
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -54,7 +54,7 @@ export async function GET() {
         }
 
         // First-8-hex-chars of UUID (no hyphens) → name  (for ws- room names)
-        // e.g. businessId = "11111111-2222-..." → prefixMap["11111111"] = "RapidX"
+        // e.g. businessId = "11111111-2222-..." → prefixMap["11111111"] = "CallWith.ai"
         const prefixMap: Record<string, string> = {};
         for (const ws of allWorkspaces ?? []) {
             const raw8 = ws.id.replace(/-/g, '').slice(0, 8).toLowerCase();
@@ -62,7 +62,7 @@ export async function GET() {
         }
 
         // DID number (digits only, no +/spaces) → { workspaceName, didFormatted }
-        // e.g. "918065480288" → { workspaceName: "RapidX", didFormatted: "+918065480288" }
+        // e.g. "918065480288" → { workspaceName: "CallWith.ai", didFormatted: "+918065480288" }
         const didMap: Record<string, { workspaceName: string; didFormatted: string }> = {};
         for (const cfg of allConfigs ?? []) {
             if (cfg.vobiz_did_number && cfg.business_id) {
@@ -178,6 +178,6 @@ export async function GET() {
 
     } catch (error: any) {
         console.error('[Room History] Error:', error);
-        return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

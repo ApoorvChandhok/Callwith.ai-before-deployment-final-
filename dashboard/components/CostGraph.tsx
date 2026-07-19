@@ -90,19 +90,13 @@ export default function CostGraph({ logs, customData, type = "default", brushSta
           <Area type="monotone" dataKey="totalCalls" name="Total Calls" stroke="#ec4899" strokeWidth={3} fillOpacity={1} fill="url(#colorCalls)" />
           <Area type="monotone" dataKey="sipTrunk" name="SIP Trunk" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorSip)" />
           <Area type="monotone" dataKey="voiceApi" name="Voice API" stroke="#eab308" strokeWidth={3} fillOpacity={1} fill="url(#colorVoice)" />
-          {customData.length > 1 && (
-            <Brush 
-              dataKey="date" 
-              height={15} 
-              stroke="#8b949e" 
-              fill="transparent" 
-              travellerWidth={6} 
-              startIndex={brushStartIndex !== undefined && !isNaN(brushStartIndex) ? Math.min(Math.max(0, brushStartIndex), customData.length - 1) : Math.max(0, customData.length - 7)} 
-              endIndex={brushEndIndex !== undefined && !isNaN(brushEndIndex) ? Math.min(Math.max(0, brushEndIndex), customData.length - 1) : Math.max(0, customData.length - 1)} 
-              onChange={onBrushChange} 
-              tickFormatter={(idx) => customData?.[idx]?.date?.split(' ')[0] || ''} 
-            />
-          )}
+          <Brush
+            dataKey="date"
+            height={15}
+            stroke="#8b949e"
+            fill="rgba(139, 148, 158, 0.1)"
+            travellerWidth={10}
+          />
         </AreaChart>
       </ResponsiveContainer>
     );
@@ -136,26 +130,31 @@ export default function CostGraph({ logs, customData, type = "default", brushSta
           </defs>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" strokeOpacity={0.1} />
           <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6b7280" }} dy={10} />
-          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6b7280" }} tickFormatter={(value) => formatCurrency(value)} dx={-10} />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 10, fill: "#6b7280" }}
+            tickFormatter={(value: number) => {
+              if (value >= 1000) return `₹${(value / 1000).toFixed(1)}k`;
+              if (value >= 100) return `₹${Math.round(value)}`;
+              return `₹${value.toFixed(0)}`;
+            }}
+            dx={-10}
+            width={50}
+          />
           <Tooltip content={<CustomTooltipCost formatCurrency={formatCurrency} />} cursor={{ stroke: '#6b7280', strokeWidth: 1, strokeDasharray: '5 5' }} />
           <Area type="monotone" dataKey="cdr" name="CDR" stackId="1" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorCdr)" />
           <Area type="monotone" dataKey="recording" name="Recording" stackId="1" stroke="#fb923c" strokeWidth={2} fillOpacity={1} fill="url(#colorRec)" />
           <Area type="monotone" dataKey="transcription" name="Transcription" stackId="1" stroke="#2dd4bf" strokeWidth={2} fillOpacity={1} fill="url(#colorTrans)" />
           <Area type="monotone" dataKey="ncc" name="Ncc" stackId="1" stroke="#f87171" strokeWidth={2} fillOpacity={1} fill="url(#colorNcc)" />
           <Area type="monotone" dataKey="didPurchase" name="DID Purchase" stackId="1" stroke="#c084fc" strokeWidth={2} fillOpacity={1} fill="url(#colorDid)" />
-          {customData.length > 1 && (
-            <Brush 
-              dataKey="date" 
-              height={15} 
-              stroke="#8b949e" 
-              fill="transparent" 
-              travellerWidth={6} 
-              startIndex={brushStartIndex !== undefined && !isNaN(brushStartIndex) ? Math.min(Math.max(0, brushStartIndex), customData.length - 1) : Math.max(0, customData.length - 7)} 
-              endIndex={brushEndIndex !== undefined && !isNaN(brushEndIndex) ? Math.min(Math.max(0, brushEndIndex), customData.length - 1) : Math.max(0, customData.length - 1)} 
-              onChange={onBrushChange} 
-              tickFormatter={(idx) => customData?.[idx]?.date?.split(' ')[0] || ''} 
-            />
-          )}
+          <Brush
+            dataKey="date"
+            height={15}
+            stroke="#8b949e"
+            fill="rgba(139, 148, 158, 0.1)"
+            travellerWidth={10}
+          />
         </AreaChart>
       </ResponsiveContainer>
     );
@@ -187,19 +186,13 @@ export default function CostGraph({ logs, customData, type = "default", brushSta
           />
           <Bar dataKey="inbound" name="Inbound" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} />
           <Bar dataKey="outbound" name="Outbound" stackId="a" fill="#f97316" radius={[4, 4, 0, 0]} />
-          {customData.length > 1 && (
-            <Brush 
-              dataKey="date" 
-              height={15} 
-              stroke="#8b949e" 
-              fill="transparent" 
-              travellerWidth={6} 
-              startIndex={brushStartIndex !== undefined && !isNaN(brushStartIndex) ? Math.min(Math.max(0, brushStartIndex), customData.length - 1) : Math.max(0, customData.length - 7)} 
-              endIndex={brushEndIndex !== undefined && !isNaN(brushEndIndex) ? Math.min(Math.max(0, brushEndIndex), customData.length - 1) : Math.max(0, customData.length - 1)} 
-              onChange={onBrushChange} 
-              tickFormatter={(idx) => customData?.[idx]?.date?.split(' ')[0] || ''} 
-            />
-          )}
+          <Brush
+            dataKey="date"
+            height={15}
+            stroke="#8b949e"
+            fill="rgba(139, 148, 158, 0.1)"
+            travellerWidth={10}
+          />
         </BarChart>
       </ResponsiveContainer>
     );
