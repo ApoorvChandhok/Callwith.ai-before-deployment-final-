@@ -75,7 +75,7 @@ export default async function Overview() {
   return (
     <div className="space-y-6 min-h-screen pb-10 w-full max-w-7xl mx-auto">
       {/* ROW 1: Date Picker + 6 Summary Cards */}
-      <DashboardHeader logs={stats.allLogs || []} />
+      <DashboardHeader />
       <div className="grid gap-5 md:grid-cols-3 lg:grid-cols-6">
         {statCards.map((card) => {
           const Icon = card.icon;
