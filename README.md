@@ -1,18 +1,14 @@
-# callwith.ai 📞
+# CallWith.ai 📞
 
-**AI Voice Calling Agent that makes sales calls, talks naturally in Hindi, and closes deals — all automatically.**
+**AI Voice Agent Platform — Make calls, close deals, scale effortlessly.**
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.10+-green.svg)
-![Status](https://img.shields.io/badge/status-active-brightgreen.svg)
+🌐 [Instagram: @callwith.ai](https://instagram.com/callwith.ai)
 
 ---
 
-## 🎯 What is callwith.ai?
+## What It Does
 
-callwith.ai is an AI-powered voice calling platform that can be configured for **any business** that makes phone calls to customers. It's not just for cars or real estate — it's a universal AI sales agent.
-
-**One-liner:** "AI that calls, talks, and converts — all automatically."
+AI voice agents that make real phone calls, have real conversations, and close real deals. Built for Indian businesses — speaks Hindi, English, and Hinglish naturally.
 
 ---
 
@@ -298,15 +294,21 @@ Upload your own knowledge base:
 
 ---
 
-## 📄 License
+## 🗺️ Roadmap
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- [ ] Advanced analytics dashboard
+- [ ] Workflow automation engine
+- [ ] WhatsApp integration
+- [ ] Custom voice cloning
+- [ ] Multi-language expansion
+- [ ] API access for developers
+- [ ] Mobile app
 
 ---
 
 ## 📞 Contact
 
-**Apoorv Chandhok** - [@apoorvchandhok](https://instagram.com/apoorvchandhok)
+📸 Instagram: [@callwith.ai](https://instagram.com/callwith.ai)
 
 **Project Link:** [https://github.com/ApoorvChandhok/callwith.ai](https://github.com/ApoorvChandhok/callwith.ai)
 
