@@ -28,33 +28,44 @@ import crypto from "crypto";
 
 export async function getCallLogs() {
   try {
-    // 0. Load env variables manually since dashboard runs in a subdirectory
-    const envPath = path.join(process.cwd(), "..", ".env");
+    // 0. Read env variables (process.env is always available; local .env fallback only in dev)
     let authId = process.env.VOBIZ_AUTH_ID;
     let authToken = process.env.VOBIZ_AUTH_TOKEN;
     
-    if (fs.existsSync(envPath) && (!authId || !authToken)) {
-      const envContent = fs.readFileSync(envPath, "utf-8");
-      envContent.split("\n").forEach(line => {
-        const [key, ...values] = line.split("=");
-        if (key === "VOBIZ_AUTH_ID") authId = values.join("=").trim().replace(/\r/g, "");
-        if (key === "VOBIZ_AUTH_TOKEN") authToken = values.join("=").trim().replace(/\r/g, "");
-      });
+    // In local dev, also try reading from the parent .env file if env vars aren't set
+    if (!authId || !authToken) {
+      try {
+        const envPath = path.join(process.cwd(), "..", ".env");
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, "utf-8");
+          envContent.split("\n").forEach(line => {
+            const [key, ...values] = line.split("=");
+            if (key === "VOBIZ_AUTH_ID") authId = values.join("=").trim().replace(/\r/g, "");
+            if (key === "VOBIZ_AUTH_TOKEN") authToken = values.join("=").trim().replace(/\r/g, "");
+          });
+        }
+      } catch { /* skip in production where parent dir doesn't exist */ }
     }
 
     // 1. Fetch local logs (for AI Sentiment, Summary, Transcript)
     let localLogs: any[] = await getCallLogsFromSupabase();
     
-    // Fallback to local JSON if Supabase has no records (e.g. fresh clone or un-migrated DB)
-    if ((!localLogs || localLogs.length === 0) && fs.existsSync(LOGS_FILE)) {
-      localLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+    // Fallback to local JSON if Supabase has no records (only works in local dev)
+    if (!localLogs || localLogs.length === 0) {
+      try {
+        if (fs.existsSync(LOGS_FILE)) {
+          localLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+        }
+      } catch { /* skip in production */ }
     }
 
-    // Load Groq Analysis Cache
+    // Load Groq Analysis Cache (local dev only)
     let analysisCache: Record<string, any> = {};
-    if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
-      analysisCache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
-    }
+    try {
+      if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
+        analysisCache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
+      }
+    } catch { /* skip in production */ }
     
     // 2. Fetch Vobiz CDRs, Transcripts, and Recordings
     let vobizCdrs: any[] = [];
