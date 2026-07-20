@@ -1067,7 +1067,7 @@ async def entrypoint(ctx: agents.JobContext):
                 msgs = agent_instance.chat_ctx.messages() if callable(getattr(agent_instance.chat_ctx, "messages", None)) else getattr(agent_instance.chat_ctx, "messages", [])
         asyncio.create_task(
             analytics.analyze_and_save_call(
-                phone_number="inbound_caller",
+                phone_number=caller_phone or "inbound_caller",
                 direction="inbound",
                 chat_messages=msgs
             )

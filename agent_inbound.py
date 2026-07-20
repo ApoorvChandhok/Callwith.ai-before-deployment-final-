@@ -1089,7 +1089,7 @@ async def entrypoint(ctx: agents.JobContext):
 
         asyncio.create_task(
             analytics.analyze_and_save_call(
-                phone_number="inbound_caller",
+                phone_number=caller_phone or "inbound_caller",
                 direction="inbound",
                 chat_messages=msgs
             )
