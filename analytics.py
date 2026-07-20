@@ -52,17 +52,18 @@ def save_lead_csv(name: str, phone: str, city: str, email: str = "", status: str
 def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str = "",
                           sentiment: str = "", caller_intent: str = "",
                           summary: str = "", business_id: str = None,
-                          business_type: str = "", campaign_id: str = ""):
+                          business_type: str = "", campaign_id: str = "") -> str | None:
     """
     Auto-CRM: Upsert lead after every call.
     - If phone exists → update call_count, append note
     - If phone is new → create lead with "AI Agent" source
     - business_type: "real_estate", "car_dealership", "inbound", etc.
     - campaign_id: used to auto-detect business_type if not provided
+    Returns: lead_id (uuid) if successful, None otherwise.
     """
     if not _SUPABASE_URL or not _SUPABASE_KEY:
         logger.info("[CRM] Supabase not configured — skipping upsert")
-        return
+        return None
 
     if not business_id:
         business_id = "11111111-1111-1111-1111-111111111111"  # Default workspace (RapidX)
@@ -81,7 +82,7 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
     clean_phone = phone.replace(" ", "").replace("+", "").strip()
     if not clean_phone:
         logger.warning("[CRM] Empty phone — skipping upsert")
-        return
+        return None
 
     now = datetime.datetime.utcnow().isoformat() + "Z"
 
@@ -152,8 +153,10 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
         try:
             with urllib.request.urlopen(patch_req, timeout=5):
                 logger.info(f"[CRM] ✅ Lead updated — {name or clean_phone} (call #{(existing_lead.get('call_count') or 0) + 1})")
+                return existing_lead['id']
         except Exception as e:
             logger.error(f"[CRM] Lead update failed: {e}")
+            return existing_lead['id']  # Return ID even if update failed
     else:
         # CREATE new lead
         row = {
@@ -185,8 +188,27 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
             },
         )
         try:
-            with urllib.request.urlopen(insert_req, timeout=5):
+            with urllib.request.urlopen(insert_req, timeout=5) as resp:
                 logger.info(f"[CRM] ✅ New lead created — {name or clean_phone} (AI Agent source)")
+                # For POST with return=minimal, we need to fetch the lead_id
+                # Query by phone to get the id
+                fetch_new_url = f"{_SUPABASE_URL}/rest/v1/leads?phone=eq.{clean_phone}&business_id=eq.{business_id}&select=id&order=created_at.desc&limit=1"
+                fetch_new_req = urllib.request.Request(
+                    fetch_new_url,
+                    headers={
+                        "apikey": _SUPABASE_KEY,
+                        "Authorization": f"Bearer {_SUPABASE_KEY}",
+                        "Accept": "application/json",
+                    },
+                )
+                try:
+                    with urllib.request.urlopen(fetch_new_req, timeout=5) as fetch_resp:
+                        rows = json.loads(fetch_resp.read().decode())
+                        if rows:
+                            return rows[0]['id']
+                except Exception:
+                    pass
+                return None
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
             # If business_type column doesn't exist, retry without it
@@ -211,8 +233,10 @@ def upsert_lead_from_call(phone: str, name: str = "", email: str = "", city: str
                     logger.error(f"[CRM] Lead creation failed on retry: {e2}")
             else:
                 logger.error(f"[CRM] Lead creation failed: HTTP {e.code} — {body[:200]}")
+                return None
         except Exception as e:
             logger.error(f"[CRM] Lead creation failed: {e}")
+            return None
 
 
 def sync_call_log_to_supabase(
@@ -227,6 +251,7 @@ def sync_call_log_to_supabase(
     business_id: str = None,
     duration: int = 0,
     audio_url: str = None,
+    lead_id: str = None,
 ):
     """
     Upsert call log into Supabase public.call_logs table.
@@ -264,6 +289,7 @@ def sync_call_log_to_supabase(
         "caller_intent": caller_intent or "",
         "campaign_id":   campaign_id or None,
         "room_name":     room_name or None,
+        "lead_id":       lead_id or None,
         "created_at":    now,
     }
 
@@ -427,6 +453,24 @@ async def analyze_and_save_call(
             
         logger.info("[ANALYTICS] Call log and sentiment saved.")
 
+        # ── Auto-CRM: Upsert lead BEFORE syncing call log (so we get lead_id) ──
+        lead_id = None
+        try:
+            user_info = analysis.get("user_info", {}) or {}
+            lead_id = upsert_lead_from_call(
+                phone=phone_number,
+                name=user_info.get("name", "") or "",
+                email=lead_email or user_info.get("email", "") or "",
+                city=user_info.get("city", "") or "",
+                sentiment=analysis.get("sentiment", ""),
+                caller_intent=analysis.get("caller_intent", ""),
+                summary=analysis.get("summary", ""),
+                business_id=None,  # Will default to workspace 1
+                campaign_id=campaign_id,
+            )
+        except Exception as crm_err:
+            logger.warning(f"[ANALYTICS] CRM upsert failed (non-fatal): {crm_err}")
+
         # ── Sync Call Log to Supabase ──────────────────────────────────────────
         sync_call_log_to_supabase(
             phone_number=phone_number,
@@ -437,6 +481,7 @@ async def analyze_and_save_call(
             caller_intent=analysis.get("caller_intent", "Unknown"),
             campaign_id=campaign_id,
             room_name=room_name,
+            lead_id=lead_id,
         )
 
         # ── Campaign result file (BulkDialer report) ─────────────────────────
@@ -555,23 +600,6 @@ async def analyze_and_save_call(
             logger.info(f"[ANALYTICS] call_completed event fired to workflow engine for {phone_number}")
         except Exception as wf_err:
             logger.warning(f"[ANALYTICS] Workflow trigger failed (non-fatal): {wf_err}")
-
-        # ── Auto-CRM: Upsert lead after every call ──────────────────────────
-        try:
-            user_info = analysis.get("user_info", {}) or {}
-            upsert_lead_from_call(
-                phone=phone_number,
-                name=user_info.get("name", "") or "",
-                email=lead_email or user_info.get("email", "") or "",
-                city=user_info.get("city", "") or "",
-                sentiment=analysis.get("sentiment", ""),
-                caller_intent=analysis.get("caller_intent", ""),
-                summary=analysis.get("summary", ""),
-                business_id=None,  # Will default to workspace 1
-                campaign_id=campaign_id,
-            )
-        except Exception as crm_err:
-            logger.warning(f"[ANALYTICS] CRM upsert failed (non-fatal): {crm_err}")
 
     except Exception as e:
         logger.error(f"[ANALYTICS] Failed to analyze/save call log: {e}")

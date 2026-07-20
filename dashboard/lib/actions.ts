@@ -213,6 +213,82 @@ export async function getCallLogs() {
   }
 }
 
+// ── Get Call Logs for a Specific Lead ────────────────────────────────────────
+export async function getCallLogsForLead(phone: string): Promise<any[]> {
+  try {
+    // Normalize phone: remove + and spaces for matching
+    const cleanPhone = phone.replace(/[+\s]/g, "");
+
+    // Try Supabase first
+    const { businessId } = await import("./supabase/leads-actions").then(m => m.getEffectiveBusinessId());
+    if (businessId) {
+      const { createClient } = await import("./supabase/server");
+      const supabase = await createClient();
+
+      // Query call_logs where from_number or to_number matches the phone
+      const { data: logs, error } = await supabase
+        .from("call_logs")
+        .select("*")
+        .eq("business_id", businessId)
+        .or(`from_number.ilike.%${cleanPhone}%,to_number.ilike.%${cleanPhone}%`)
+        .order("created_at", { ascending: false });
+
+      if (!error && logs && logs.length > 0) {
+        return logs.map((row) => {
+          let transcriptText = "";
+          if (Array.isArray(row.transcript)) {
+            transcriptText = row.transcript.map((m: any) => m.text).join("\n");
+          } else if (typeof row.transcript === "string") {
+            transcriptText = row.transcript;
+          }
+
+          return {
+            id: row.id,
+            timestamp: row.created_at,
+            phone_number: row.from_number || row.to_number || "",
+            direction: row.direction,
+            status: row.status,
+            duration: row.duration,
+            transcript: transcriptText,
+            summary: row.summary,
+            sentiment: row.sentiment,
+            caller_intent: row.caller_intent,
+            lead_id: row.lead_id,
+          };
+        });
+      }
+    }
+
+    // Fallback to local JSON
+    if (fs.existsSync(LOGS_FILE)) {
+      const localLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+      return localLogs
+        .filter((log: any) => {
+          const logPhone = (log.phone_number || "").replace(/[+\s]/g, "");
+          return logPhone.includes(cleanPhone) || cleanPhone.includes(logPhone);
+        })
+        .map((log: any) => ({
+          id: `local-${log.timestamp}`,
+          timestamp: log.timestamp,
+          phone_number: log.phone_number,
+          direction: log.direction,
+          status: "Completed",
+          duration: 0,
+          transcript: log.transcript || "",
+          summary: log.summary || "",
+          sentiment: log.sentiment || "",
+          caller_intent: log.caller_intent || "",
+          lead_id: null,
+        }));
+    }
+
+    return [];
+  } catch (error) {
+    console.error("Error reading call logs for lead:", error);
+    return [];
+  }
+}
+
 // ── Lead Types ─────────────────────────────────────────────────────────────
 
 export type LeadStatus = "New" | "Contacted" | "Qualified" | "Proposal" | "Negotiation" | "Won" | "Lost";
@@ -1209,4 +1285,100 @@ export async function exportLeadsCsv(): Promise<string> {
       .join(",")
   );
   return [headers, ...rows].join("\n");
+}
+
+export async function syncVobizRecordingAction(logId: string, phone: string, timestamp: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const envPath = path.join(process.cwd(), "..", ".env");
+    let authId = process.env.VOBIZ_AUTH_ID;
+    let authToken = process.env.VOBIZ_AUTH_TOKEN;
+    
+    if (fs.existsSync(envPath) && (!authId || !authToken)) {
+      const envContent = fs.readFileSync(envPath, "utf-8");
+      envContent.split("\n").forEach(line => {
+        const [key, ...values] = line.split("=");
+        if (key === "VOBIZ_AUTH_ID") authId = values.join("=").trim().replace(/\r/g, "");
+        if (key === "VOBIZ_AUTH_TOKEN") authToken = values.join("=").trim().replace(/\r/g, "");
+      });
+    }
+
+    if (!authId || !authToken) return { success: false, message: "Missing Vobiz credentials" };
+
+    const headers = { "X-Auth-ID": authId, "X-Auth-Token": authToken, "Accept": "application/json" };
+    
+    // Fetch recent CDRs (we can reuse fetchAllVobizCdrs or fetch directly)
+    const cdrs = await fetchAllVobizCdrs(authId, headers);
+    if (!cdrs || cdrs.length === 0) return { success: false, message: "No CDRs found in Vobiz" };
+
+    const normalizedPhone = phone?.replace("+", "");
+    const targetTime = new Date(timestamp).getTime();
+    
+    let bestMatch: any = null;
+    let minTimeDiff = Infinity;
+
+    // We allow up to 48 hours diff for test environments or timezone issues
+    const maxDiff = 1000 * 60 * 60 * 48; 
+
+    for (const cdr of cdrs) {
+      const dest = cdr.destination_number?.replace("+", "");
+      const caller = cdr.caller_id_number?.replace("+", "");
+      
+      if (normalizedPhone && (dest === normalizedPhone || caller === normalizedPhone)) {
+        const cdrTime = new Date(cdr.start_time).getTime();
+        const diff = Math.abs(cdrTime - targetTime);
+        if (diff < minTimeDiff && diff < maxDiff) {
+          minTimeDiff = diff;
+          bestMatch = cdr;
+        }
+      }
+    }
+
+    if (!bestMatch) {
+      return { success: false, message: "Could not find a matching call in Vobiz for this number." };
+    }
+
+    const sipCallId = bestMatch.sip_call_id || bestMatch.uuid;
+    if (!sipCallId) {
+      return { success: false, message: "Matched call in Vobiz lacks a SIP Call ID." };
+    }
+
+    // Since we matched it, let's update Supabase audio_url
+    // We will save a special Vobiz proxied URL so CustomAudioPlayer handles it.
+    // Or just save `sip_call_id` in a column. But since we created `updateCallLogAudioUrlInSupabase`,
+    // We can just construct the proxied URL we normally use.
+    const newAudioUrl = `/api/recordings/${sipCallId}.wav`;
+    
+    const { updateCallLogAudioUrlInSupabase } = await import("@/lib/supabase/call-log-actions");
+    const updated = await updateCallLogAudioUrlInSupabase(logId, newAudioUrl);
+    
+    if (updated) {
+      revalidatePath(`/logs/${logId}`);
+      revalidatePath(`/logs`);
+      return { success: true, message: "Audio recording synced successfully!" };
+    } else {
+      // If it failed to update Supabase, maybe update local JSON
+      if (fs.existsSync(LOGS_FILE)) {
+        let callLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+        let localUpdated = false;
+        callLogs = callLogs.map((log: any) => {
+          if (log.id === logId) {
+            localUpdated = true;
+            return { ...log, recording_path: newAudioUrl, sip_call_id: sipCallId };
+          }
+          return log;
+        });
+        if (localUpdated) {
+          fs.writeFileSync(LOGS_FILE, JSON.stringify(callLogs, null, 2));
+          revalidatePath(`/logs/${logId}`);
+          revalidatePath(`/logs`);
+          return { success: true, message: "Audio synced (local JSON updated)." };
+        }
+      }
+    }
+
+    return { success: false, message: "Found match but failed to save to database." };
+  } catch (error: any) {
+    console.error("Error in syncVobizRecordingAction:", error);
+    return { success: false, message: error.message || "Failed to sync recording" };
+  }
 }

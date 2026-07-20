@@ -47,9 +47,9 @@ function minRole(role: UserRole | undefined, min: UserRole): boolean {
 
 const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
   super_admin: { label: "Super Admin", color: "bg-violet-500/20 text-violet-300 border-violet-500/30" },
-  admin:       { label: "Admin",       color: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30" },
-  manager:     { label: "Manager",     color: "bg-blue-500/20   text-blue-300   border-blue-500/30" },
-  read_only:   { label: "View Only",   color: "bg-gray-500/20   text-gray-300   border-gray-500/30" },
+  admin: { label: "Admin", color: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30" },
+  manager: { label: "Manager", color: "bg-blue-500/20   text-blue-300   border-blue-500/30" },
+  read_only: { label: "View Only", color: "bg-gray-500/20   text-gray-300   border-gray-500/30" },
 };
 
 // ── Inline Profile Avatar + Dropdown ─────────────────────────────────────────
@@ -93,11 +93,10 @@ function ProfileAvatar({
       <motion.button
         whileTap={{ scale: 0.93 }}
         onClick={() => setIsOpen((o) => !o)}
-        className={`flex items-center focus:outline-none ${
-          isCollapsed
-            ? "rounded-full"
-            : "gap-2 pl-1 pr-2 py-1 rounded-xl hover:bg-white/8 transition-colors max-w-[130px]"
-        }`}
+        className={`flex items-center focus:outline-none ${isCollapsed
+          ? "rounded-full"
+          : "gap-2 pl-1 pr-2 py-1 rounded-xl hover:bg-white/8 transition-colors max-w-[130px]"
+          }`}
         title={isCollapsed ? (profile?.fullName ?? "Profile") : undefined}
       >
         {/* Avatar circle */}
@@ -121,9 +120,8 @@ function ProfileAvatar({
 
         {!isCollapsed && (
           <ChevronDown
-            className={`w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200 ${
-              isOpen ? "rotate-180" : ""
-            }`}
+            className={`w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""
+              }`}
           />
         )}
       </motion.button>
@@ -136,9 +134,8 @@ function ProfileAvatar({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.96 }}
             transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
-            className={`absolute top-full mt-2 w-56 bg-[#111111]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl shadow-black/40 z-50 overflow-hidden ${
-              isCollapsed ? "left-0" : "right-0"
-            }`}
+            className={`absolute top-full mt-2 w-56 bg-[#111111]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl shadow-black/40 z-50 overflow-hidden ${isCollapsed ? "left-0" : "right-0"
+              }`}
           >
             {/* Profile header */}
             <div className="p-4 border-b border-white/5">
@@ -218,23 +215,23 @@ export default function Sidebar() {
   const role = profile?.role;
 
   const allRoutes = [
-    { name: "Overview",        path: "/",            icon: LayoutDashboard, minRoleRequired: "read_only"  as UserRole },
-    { name: "Outbound Dialer", path: "/dialer",       icon: PhoneOutgoing,   minRoleRequired: "manager"   as UserRole },
-    { name: "Real Estate",     path: "/real-estate",  icon: Building,        minRoleRequired: "manager"   as UserRole },
-    { name: "Car Dealership",  path: "/car-dealership", icon: Car,           minRoleRequired: "manager"   as UserRole },
-    { name: "Call Logs",       path: "/logs",         icon: Activity,        minRoleRequired: "read_only"  as UserRole },
-    { name: "Leads / CRM",     path: "/leads",        icon: Users,           minRoleRequired: "read_only"  as UserRole },
-    { name: "Workflows",       path: "/workflows",    icon: GitBranch,       minRoleRequired: "manager"   as UserRole },
-    { name: "Integrations",    path: "/integrations", icon: Key,             minRoleRequired: "admin"     as UserRole },
-    { name: "Wallet",          path: "/wallet",        icon: Wallet,          minRoleRequired: "admin"     as UserRole },
+    { name: "Overview", path: "/", icon: LayoutDashboard, minRoleRequired: "read_only" as UserRole },
+    { name: "Outbound Dialer", path: "/dialer", icon: PhoneOutgoing, minRoleRequired: "manager" as UserRole },
+    { name: "Real Estate", path: "/real-estate", icon: Building, minRoleRequired: "manager" as UserRole },
+    { name: "Car Dealership", path: "/car-dealership", icon: Car, minRoleRequired: "manager" as UserRole },
+    { name: "Call Logs", path: "/logs", icon: Activity, minRoleRequired: "read_only" as UserRole },
+    { name: "Leads / CRM", path: "/leads", icon: Users, minRoleRequired: "read_only" as UserRole },
+    { name: "Workflows", path: "/workflows", icon: GitBranch, minRoleRequired: "manager" as UserRole },
+    { name: "Integrations", path: "/integrations", icon: Key, minRoleRequired: "admin" as UserRole },
+    { name: "Wallet", path: "/wallet", icon: Wallet, minRoleRequired: "admin" as UserRole },
   ];
 
   const allConfigRoutes = [
-    { name: "Inbound Agent",  path: "/config/inbound",  icon: PhoneIncoming, minRoleRequired: "admin" as UserRole },
-    { name: "Outbound Agent", path: "/config/outbound", icon: Bot,           minRoleRequired: "admin" as UserRole },
+    { name: "Inbound Agent", path: "/config/inbound", icon: PhoneIncoming, minRoleRequired: "admin" as UserRole },
+    { name: "Outbound Agent", path: "/config/outbound", icon: Bot, minRoleRequired: "admin" as UserRole },
   ];
 
-  const routes       = allRoutes.filter(r => minRole(role, r.minRoleRequired));
+  const routes = allRoutes.filter(r => minRole(role, r.minRoleRequired));
   const configRoutes = allConfigRoutes.filter(r => minRole(role, r.minRoleRequired));
 
   const currentTheme = mounted ? resolvedTheme : "light";
@@ -281,20 +278,13 @@ export default function Sidebar() {
             {/* Logo — fixed width so it never bleeds into profile area */}
             <motion.div
               className="flex items-center gap-2.5 cursor-pointer shrink-0"
-              style={{ width: 110 }}
+              style={{ width: 140 }}
               onHoverStart={() => setLogoHover(true)}
               onHoverEnd={() => setLogoHover(false)}
             >
-              <motion.div
-                whileHover={{ scale: 1.08, rotate: 2 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-white" />
-              </motion.div>
 
-              <div className="relative h-6 overflow-hidden" style={{ perspective: "1000px", width: 64 }}>
+
+              <div className="relative h-6 overflow-hidden" style={{ perspective: "1000px", width: 105 }}>
                 <motion.div
                   className="relative w-full h-full"
                   style={{ transformStyle: "preserve-3d" }}
@@ -303,7 +293,7 @@ export default function Sidebar() {
                 >
                   {/* Front */}
                   <div className="absolute inset-0 flex items-center" style={{ transform: "translateZ(12px)" }}>
-                    <span className="text-[15px] font-bold tracking-tight gradient-text whitespace-nowrap">CallWith.ai</span>
+                    <span className="text-[20px] font-bold tracking-tight text-white whitespace-nowrap">Call with Ai</span>
                   </div>
                   {/* Bottom */}
                   <div className="absolute inset-0 flex items-center" style={{ transform: "rotateX(90deg) translateZ(12px)" }}>
@@ -350,11 +340,10 @@ export default function Sidebar() {
             >
               <Link
                 href={route.path}
-                className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-4'} py-3 rounded-xl transition-all duration-200 text-[13px] font-medium ${
-                  isActive
-                    ? "font-semibold shadow-sm"
-                    : "text-gray-400 hover:bg-white/10 hover:text-white"
-                }`}
+                className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-4'} py-3 rounded-xl transition-all duration-200 text-[13px] font-medium ${isActive
+                  ? "font-semibold shadow-sm"
+                  : "text-gray-400 hover:bg-white/10 hover:text-white"
+                  }`}
                 title={isCollapsed ? route.name : undefined}
               >
                 {/* Active indicator pill */}
@@ -372,11 +361,10 @@ export default function Sidebar() {
                 </AnimatePresence>
 
                 <Icon
-                  className={`relative z-10 w-[18px] h-[18px] transition-colors duration-200 ${
-                    isActive
-                      ? "text-black"
-                      : "text-gray-400 group-hover:text-white"
-                  }`}
+                  className={`relative z-10 w-[18px] h-[18px] transition-colors duration-200 ${isActive
+                    ? "text-black"
+                    : "text-gray-400 group-hover:text-white"
+                    }`}
                 />
                 {!isCollapsed && (
                   <span className={`relative z-10 flex-1 flex items-center justify-between ${isActive ? 'text-black' : ''}`}>
@@ -418,11 +406,10 @@ export default function Sidebar() {
             >
               <Link
                 href={route.path}
-                className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-4'} py-3 rounded-xl transition-all duration-200 text-[13px] font-medium ${
-                  isActive
-                    ? "font-semibold shadow-sm"
-                    : "text-gray-400 hover:bg-white/10 hover:text-white"
-                }`}
+                className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-4'} py-3 rounded-xl transition-all duration-200 text-[13px] font-medium ${isActive
+                  ? "font-semibold shadow-sm"
+                  : "text-gray-400 hover:bg-white/10 hover:text-white"
+                  }`}
                 title={isCollapsed ? route.name : undefined}
               >
                 <AnimatePresence>
@@ -438,11 +425,10 @@ export default function Sidebar() {
                   )}
                 </AnimatePresence>
                 <Icon
-                  className={`relative z-10 w-[18px] h-[18px] transition-colors duration-200 ${
-                    isActive
-                      ? "text-black"
-                      : "text-gray-400 group-hover:text-white"
-                  }`}
+                  className={`relative z-10 w-[18px] h-[18px] transition-colors duration-200 ${isActive
+                    ? "text-black"
+                    : "text-gray-400 group-hover:text-white"
+                    }`}
                 />
                 {!isCollapsed && <span className={`relative z-10 flex-1 ${isActive ? 'text-black' : ''}`}>{route.name}</span>}
               </Link>
@@ -468,13 +454,11 @@ export default function Sidebar() {
             >
               <Link
                 href="/super-admin"
-                className={`group relative flex items-center ${
-                  isCollapsed ? 'justify-center' : 'gap-4 px-4'
-                } py-3 rounded-xl transition-all duration-200 text-[13px] font-medium ${
-                  pathname.startsWith('/super-admin')
+                className={`group relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4 px-4'
+                  } py-3 rounded-xl transition-all duration-200 text-[13px] font-medium ${pathname.startsWith('/super-admin')
                     ? 'bg-violet-500/15 text-violet-300'
                     : 'text-violet-400/60 hover:bg-violet-500/10 hover:text-violet-300'
-                }`}
+                  }`}
                 title={isCollapsed ? 'Control Panel' : undefined}
               >
                 <ShieldCheck className="relative z-10 w-[18px] h-[18px] shrink-0" />

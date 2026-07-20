@@ -58,3 +58,27 @@ export async function getCallLogsFromSupabase(): Promise<any[]> {
     return [];
   }
 }
+
+export async function updateCallLogAudioUrlInSupabase(id: string, audioUrl: string): Promise<boolean> {
+  try {
+    const { businessId } = await getEffectiveBusinessId();
+    if (!businessId) return false;
+
+    const supabase = await createClient();
+
+    const { error } = await supabase
+      .from("call_logs")
+      .update({ audio_url: audioUrl })
+      .eq("id", id)
+      .eq("business_id", businessId);
+
+    if (error) {
+      console.error("[updateCallLogAudioUrlInSupabase] error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[updateCallLogAudioUrlInSupabase] exception:", err);
+    return false;
+  }
+}

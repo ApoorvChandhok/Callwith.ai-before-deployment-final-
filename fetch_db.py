@@ -1,1 +1,0 @@
-import os, json, urllib.request; from dotenv import load_dotenv; load_dotenv('dashboard/.env.local'); url = os.environ.get('NEXT_PUBLIC_SUPABASE_URL') + '/rest/v1/agent_configs'; key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY'); req = urllib.request.Request(url, headers={'apikey': key, 'Authorization': f'Bearer {key}'}); print(urllib.request.urlopen(req).read().decode('utf-8'))

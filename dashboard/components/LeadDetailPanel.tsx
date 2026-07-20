@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/context/user-context";
 import {
   X, Phone, Mail, MessageCircle, MapPin, Tag, Plus,
   Clock, User, Send, ChevronDown, Check, Trash2,
-  FileText, TrendingUp, Activity, Edit3,
+  FileText, TrendingUp, Activity, Edit3, PhoneCall, PhoneIncoming, PhoneOutgoing,
 } from "lucide-react";
 import type { EnrichedLead, LeadStatus, LeadPriority, LeadSource } from "@/lib/actions";
-import { updateLeadMeta, addLeadNote, deleteLead } from "@/lib/actions";
+import { updateLeadMeta, addLeadNote, deleteLead, getCallLogsForLead } from "@/lib/actions";
 
 const ALL_STATUSES: LeadStatus[] = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
 const ALL_PRIORITIES: LeadPriority[] = ["Low", "Medium", "High", "Urgent"];
@@ -40,7 +40,7 @@ interface Props {
 export default function LeadDetailPanel({ lead, onClose, onUpdate, onDelete }: Props) {
   const router = useRouter();
   const { can } = useUser();
-  const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "notes" | "calls" | "activity">("details");
   const [newNote, setNewNote] = useState("");
   const [newTag, setNewTag] = useState("");
   const [isEditing, setIsEditing] = useState(false);
@@ -51,6 +51,30 @@ export default function LeadDetailPanel({ lead, onClose, onUpdate, onDelete }: P
   const [editName, setEditName] = useState(lead.name);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [callLogs, setCallLogs] = useState<any[]>([]);
+  const [loadingCalls, setLoadingCalls] = useState(false);
+  const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
+
+  // Fetch call logs for this lead
+  const fetchCallLogs = useCallback(async () => {
+    if (!lead.phone) return;
+    setLoadingCalls(true);
+    try {
+      const logs = await getCallLogsForLead(lead.phone);
+      setCallLogs(logs);
+    } catch (err) {
+      console.error("Failed to fetch call logs for lead:", err);
+    } finally {
+      setLoadingCalls(false);
+    }
+  }, [lead.phone]);
+
+  // Fetch call logs when "calls" tab is selected
+  useEffect(() => {
+    if (activeTab === "calls" && callLogs.length === 0 && !loadingCalls) {
+      fetchCallLogs();
+    }
+  }, [activeTab, callLogs.length, loadingCalls, fetchCallLogs]);
 
   const nameSum = (lead.name || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const avatarColor = AVATAR_COLORS[nameSum % AVATAR_COLORS.length];
@@ -198,7 +222,7 @@ export default function LeadDetailPanel({ lead, onClose, onUpdate, onDelete }: P
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200/50 dark:border-white/5 px-5 flex-shrink-0">
-          {(["details", "notes", "activity"] as const).map((tab) => (
+          {(["details", "notes", "calls", "activity"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -208,7 +232,12 @@ export default function LeadDetailPanel({ lead, onClose, onUpdate, onDelete }: P
                   : "border-transparent text-gray-500 dark:text-[#8b949e] hover:text-gray-700 dark:hover:text-[#c9d1d9]"
               }`}
             >
-              {tab}
+              {tab === "calls" ? (
+                <span className="flex items-center gap-1">
+                  <PhoneCall className="w-3 h-3" />
+                  Calls {callLogs.length > 0 && `(${callLogs.length})`}
+                </span>
+              ) : tab}
             </button>
           ))}
         </div>
@@ -467,6 +496,120 @@ export default function LeadDetailPanel({ lead, onClose, onUpdate, onDelete }: P
                   ))
                 )}
               </div>
+            </div>
+          )}
+
+          {activeTab === "calls" && (
+            <div className="space-y-4">
+              {loadingCalls ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500" />
+                  <span className="ml-2 text-sm text-gray-500 dark:text-[#8b949e]">Loading call history...</span>
+                </div>
+              ) : callLogs.length === 0 ? (
+                <div className="text-center py-8">
+                  <PhoneCall className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-[#30363d]" />
+                  <p className="text-xs text-gray-400 dark:text-[#6e7681]">No call history yet</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {callLogs.map((call) => (
+                    <div
+                      key={call.id}
+                      className="rounded-xl border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117] overflow-hidden"
+                    >
+                      {/* Call Header */}
+                      <div
+                        className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#161b22] transition-colors"
+                        onClick={() => setExpandedCallId(expandedCallId === call.id ? null : call.id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            call.direction === "inbound"
+                              ? "bg-green-100 dark:bg-green-500/10"
+                              : "bg-blue-100 dark:bg-blue-500/10"
+                          }`}>
+                            {call.direction === "inbound" ? (
+                              <PhoneIncoming className="w-4 h-4 text-green-600 dark:text-green-400" />
+                            ) : (
+                              <PhoneOutgoing className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-700 dark:text-[#c9d1d9]">
+                                {new Date(call.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                              </span>
+                              <span className="text-[10px] text-gray-400 dark:text-[#6e7681]">
+                                {new Date(call.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium ${
+                                call.direction === "inbound"
+                                  ? "bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400"
+                                  : "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                              }`}>
+                                {call.direction === "inbound" ? "Inbound" : "Outbound"}
+                              </span>
+                              {call.duration > 0 && (
+                                <span className="text-[10px] text-gray-400 dark:text-[#6e7681]">
+                                  {Math.floor(call.duration / 60)}m {call.duration % 60}s
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {call.sentiment && (
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              call.sentiment === "Positive" ? "bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400" :
+                              call.sentiment === "Negative" ? "bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400" :
+                              "bg-gray-100 dark:bg-[#21262d] text-gray-600 dark:text-[#8b949e]"
+                            }`}>
+                              {call.sentiment}
+                            </span>
+                          )}
+                          <ChevronDown className={`w-4 h-4 text-gray-400 dark:text-[#6e7681] transition-transform ${
+                            expandedCallId === call.id ? "rotate-180" : ""
+                          }`} />
+                        </div>
+                      </div>
+
+                      {/* Expanded Content */}
+                      {expandedCallId === call.id && (
+                        <div className="px-3 pb-3 border-t border-gray-200 dark:border-[#30363d]">
+                          {/* Summary */}
+                          {call.summary && (
+                            <div className="mt-3 p-2.5 rounded-lg bg-white dark:bg-[#161b22] border border-gray-100 dark:border-[#21262d]">
+                              <p className="text-[10px] font-semibold text-gray-500 dark:text-[#8b949e] uppercase tracking-wider mb-1">Summary</p>
+                              <p className="text-xs text-gray-700 dark:text-[#c9d1d9] leading-relaxed">{call.summary}</p>
+                            </div>
+                          )}
+
+                          {/* Caller Intent */}
+                          {call.caller_intent && (
+                            <div className="mt-2 p-2.5 rounded-lg bg-white dark:bg-[#161b22] border border-gray-100 dark:border-[#21262d]">
+                              <p className="text-[10px] font-semibold text-gray-500 dark:text-[#8b949e] uppercase tracking-wider mb-1">Intent</p>
+                              <p className="text-xs text-gray-700 dark:text-[#c9d1d9]">{call.caller_intent}</p>
+                            </div>
+                          )}
+
+                          {/* Transcript Preview */}
+                          {call.transcript && (
+                            <div className="mt-2 p-2.5 rounded-lg bg-white dark:bg-[#161b22] border border-gray-100 dark:border-[#21262d]">
+                              <p className="text-[10px] font-semibold text-gray-500 dark:text-[#8b949e] uppercase tracking-wider mb-1">Transcript</p>
+                              <p className="text-[11px] text-gray-600 dark:text-[#8b949e] leading-relaxed whitespace-pre-wrap line-clamp-4">
+                                {call.transcript.substring(0, 500)}{call.transcript.length > 500 ? "..." : ""}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
