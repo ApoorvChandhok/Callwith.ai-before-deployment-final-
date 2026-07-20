@@ -19,7 +19,7 @@ interface CampaignResult {
     row_index: number;
     phone_number: string;
     lead_email: string;
-    status: "Called" | "No Answer" | "Failed" | "Pending";
+    status: "Called" | "No Answer" | "Failed" | "Pending" | "Connected";
     remarks: string;
     sentiment: "Positive" | "Neutral" | "Negative" | "";
     intent: string;

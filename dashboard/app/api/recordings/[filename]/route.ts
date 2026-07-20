@@ -293,7 +293,7 @@ export async function GET(
           console.warn(`[Recordings] Could not save locally:`, saveErr);
         }
 
-        return new NextResponse(result.buffer, {
+        return new NextResponse(new Uint8Array(result.buffer), {
           headers: {
             "Content-Type": result.contentType,
             "Content-Length": result.buffer.length.toString(),

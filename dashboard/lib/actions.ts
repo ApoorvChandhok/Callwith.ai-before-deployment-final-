@@ -432,6 +432,7 @@ export async function getLeads(): Promise<EnrichedLead[]> {
         status: m.status || "New",
         priority: m.priority || "Medium",
         source: m.source || "AI Agent (Inbound)",
+        businessType: (m as any).businessType || "",
         tags: m.tags || [],
         notes: m.notes || [],
         assignedTo: m.assignedTo || "",

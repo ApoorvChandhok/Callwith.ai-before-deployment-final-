@@ -707,7 +707,7 @@ export async function POST(req: NextRequest) {
   // The Python agent sets x-tool-gateway-secret on every request.
   // Browser-originating requests (no secret) are rejected immediately.
   if (!validateGatewaySecret(req)) {
-    const ip = req.ip || req.headers.get("x-forwarded-for") || "unknown";
+    const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
     const userAgent = req.headers.get("user-agent") || "unknown";
     console.warn(`[tool-gateway] ⛔ Rejected request — missing or invalid x-tool-gateway-secret. IP: ${ip}, User-Agent: ${userAgent}`);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

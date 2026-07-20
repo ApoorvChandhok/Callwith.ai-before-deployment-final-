@@ -161,7 +161,7 @@ export async function POST(request: Request) {
   // Encrypt Vobiz Credentials
   if (vobiz_username || vobiz_password || sip_domain) {
     try {
-      await createCredential(businessId, "Vobiz SIP Account", "vobiz", {
+      await createCredential(businessId, "Vobiz SIP Account", "vobiz" as any, {
         username: vobiz_username || "",
         password: vobiz_password || "",
         domain: sip_domain || "sip.vobiz.com",
