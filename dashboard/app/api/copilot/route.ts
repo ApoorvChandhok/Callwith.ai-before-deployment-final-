@@ -1,11 +1,18 @@
 ﻿import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
-// Initialize Groq provider using the OpenAI SDK wrapper
-const groq = createOpenAI({
-  baseURL: "https://api.groq.com/openai/v1",
-  apiKey: process.env.GROQ_API_KEY || "",
-});
+// Lazy-initialized Groq provider using the OpenAI SDK wrapper
+let _groq: ReturnType<typeof createOpenAI> | null = null;
+
+function getGroq() {
+  if (!_groq) {
+    _groq = createOpenAI({
+      baseURL: "https://api.groq.com/openai/v1",
+      apiKey: process.env.GROQ_API_KEY || "",
+    });
+  }
+  return _groq;
+}
 
 const BASE_SYSTEM_PROMPT = `You are the CallWith.ai AI Assistant, a helpful and deeply technical copilot embedded inside the CallWith.ai Voice AI dashboard.
 Your goal is to help users navigate the dashboard, explain complex settings, debug SIP/telephony errors, and build workflows.
@@ -38,7 +45,7 @@ Use this context to inform your answers if they ask questions about what they ar
 `;
 
     const result = streamText({
-      model: groq("llama-3.3-70b-versatile"),
+      model: getGroq()("llama-3.3-70b-versatile"),
       messages: [
         { role: "system", content: BASE_SYSTEM_PROMPT + "\n" + dynamicContext },
         ...messages,

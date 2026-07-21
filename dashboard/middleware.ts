@@ -14,7 +14,9 @@ export const config = {
      * - favicon.ico, sitemap.xml, robots.txt (metadata files)
      * - /api/tools/* (tool gateway — called by voice agent without session cookies)
      * - /api/auth/*  (OAuth callbacks)
+     * - /api/workflow/* (workflow engine — called by agent without session)
+     * - /api/knowledge-base/* (knowledge base — called by agent without session)
      */
-    '/((?!_next/static|_next/image|favicon\\.ico|api/tools/|api/workflow/|api/auth/|api/real-estate/|api/knowledge-base/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|api/tools/|api/workflow/|api/auth/|api/knowledge-base/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

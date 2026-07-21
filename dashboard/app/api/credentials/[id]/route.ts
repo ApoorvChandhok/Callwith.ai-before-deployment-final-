@@ -19,10 +19,12 @@ import {
   type CredentialType,
 } from "@/lib/credentials-store";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 async function getWorkspaceId(): Promise<string | null> {
   try {
@@ -34,7 +36,7 @@ async function getWorkspaceId(): Promise<string | null> {
     );
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
-    const { data: profile } = await supabaseAdmin
+    const { data: profile } = await getSupabaseAdmin()
       .from("profiles")
       .select("business_id")
       .eq("id", user.id)

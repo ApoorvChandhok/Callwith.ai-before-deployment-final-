@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Build output
+.next
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Environment files (secrets never go into the image)
+.env
+.env.local
+.env.*.local
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+LICENSE
+
+# Debug / logs
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts

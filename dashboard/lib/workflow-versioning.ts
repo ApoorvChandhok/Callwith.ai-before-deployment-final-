@@ -6,7 +6,7 @@
  */
 
 import fs from "fs";
-import path from "path";
+import { getReadPath, getWritePath } from "./paths";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -22,26 +22,21 @@ export interface WorkflowVersion {
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-const DATA_DIR = path.join(process.cwd(), "..", "data");
-const VERSIONS_FILE = path.join(DATA_DIR, "workflow_versions.json");
+const VERSIONS_FILE = () => getReadPath("workflow_versions.json");
 const MAX_VERSIONS = 50;
-
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
 
 function readVersions(): WorkflowVersion[] {
   try {
-    if (!fs.existsSync(VERSIONS_FILE)) return [];
-    return JSON.parse(fs.readFileSync(VERSIONS_FILE, "utf-8"));
+    const f = VERSIONS_FILE();
+    if (!fs.existsSync(f)) return [];
+    return JSON.parse(fs.readFileSync(f, "utf-8"));
   } catch {
     return [];
   }
 }
 
 function writeVersions(versions: WorkflowVersion[]) {
-  ensureDataDir();
-  fs.writeFileSync(VERSIONS_FILE, JSON.stringify(versions, null, 2), "utf-8");
+  fs.writeFileSync(getWritePath("workflow_versions.json"), JSON.stringify(versions, null, 2), "utf-8");
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

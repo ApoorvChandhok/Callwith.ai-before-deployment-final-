@@ -3,10 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseAdmin() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+}
 
 async function getWorkspaceId(req: NextRequest): Promise<string | null> {
     try {
@@ -18,7 +20,7 @@ async function getWorkspaceId(req: NextRequest): Promise<string | null> {
         );
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return null;
-        const { data: profile } = await supabaseAdmin
+        const { data: profile } = await getSupabaseAdmin()
             .from("profiles")
             .select("business_id")
             .eq("id", user.id)
@@ -39,7 +41,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
         .from("campaign_templates")
         .select("id, name, config, created_at, updated_at")
         .eq("workspace_id", workspaceId)
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
 
     if (id) {
         // Update existing template
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await getSupabaseAdmin()
             .from("campaign_templates")
             .update({ name: name.trim(), config, updated_at: new Date().toISOString() })
             .eq("id", id)
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create new template
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
         .from("campaign_templates")
         .insert({ workspace_id: workspaceId, name: name.trim(), config })
         .select()
@@ -105,7 +107,7 @@ export async function DELETE(req: NextRequest) {
     const id = req.nextUrl.searchParams.get("id");
     if (!id) return NextResponse.json({ error: "Template id is required" }, { status: 400 });
 
-    const { error } = await supabaseAdmin
+    const { error } = await getSupabaseAdmin()
         .from("campaign_templates")
         .delete()
         .eq("id", id)

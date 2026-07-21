@@ -8,6 +8,7 @@ import json
 import asyncio
 import datetime
 import re
+import urllib.request
 from dotenv import load_dotenv
 
 from livekit import agents, api

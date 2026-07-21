@@ -3,6 +3,33 @@
 ---
 ## Changelog
 
+### 2026-07-21 - Vobiz → Supabase Sync on Refresh + Proper Pagination
+
+* **[NEW] `dashboard/lib/supabase/call-log-actions.ts`** — Added `syncVobizToSupabase()`: fetches all CDRs, transcripts, and recordings from Vobiz API (paginated), merges them, and upserts into the `call_logs` Supabase table using `cdr.uuid` as the idempotent primary key. Batches in groups of 50.
+* **[NEW] `dashboard/app/api/call-logs/sync/route.ts`** — New `POST /api/call-logs/sync` endpoint that triggers the Vobiz sync and returns `{ upserted, errors, total, message }`.
+* **[FIX] `dashboard/app/api/call-logs/route.ts`** — Rewrote to use proper Supabase server-side pagination (COUNT + RANGE queries) instead of fetching all rows and slicing in memory. Now returns accurate `total`, `totalPages`, `hasMore`.
+* **[FIX] `dashboard/app/(dashboard)/logs/page.tsx`** — Refresh button now: (1) calls `POST /api/call-logs/sync` to pull latest from Vobiz, (2) re-fetches page 1 from Supabase with correct pagination. Added sync status banner, empty-state prompt, and `DatabaseZap` icon during sync.
+* **[FIX] `dashboard/.env.local`** — Added `VOBIZ_AUTH_ID` and `VOBIZ_AUTH_TOKEN` so Next.js API routes pick them up without reading the parent `.env` file.
+
+---
+
+### 2026-07-21 - Call Logs Refresh Button Fix
+
+* **[FIX] `dashboard/app/(dashboard)/logs/page.tsx`** — Refresh button now fetches ALL call logs from Supabase in a single request (`limit=9999, page=1`) instead of only re-fetching the current paginated slice. After refresh, pagination state is reset to page 1 and the full latest list from Supabase is displayed.
+
+---
+
+### 2026-07-21 - EROFS Serverless Fix: Read-Only File System
+
+* **[NEW] `dashboard/lib/paths.ts`** — Centralized file-path resolver. In Vercel / Lambda (`/var/task` is read-only), all writes are redirected to `/tmp/data`. Reads check `/tmp/data` first (freshly written) then fall back to the bundled source copy.
+* **[FIX] `dashboard/lib/actions.ts`** — All `fs.writeFileSync` / `fs.appendFileSync` calls now use `getWritePath()` → `/tmp/data` in production.
+* **[FIX] `dashboard/lib/workflow-actions.ts`** — `workflows.json` writes go to `/tmp/data`.
+* **[FIX] `dashboard/lib/workflow-executor.ts`** — Fixed `workflow_runs.json`, `workflow_queue.json`, `leads_meta.json`, `notifications.json` writes.
+* **[FIX] `dashboard/lib/workflow-versioning.ts`** — Fixed `workflow_versions.json` writes.
+* **Root Cause**: `/var/task` is read-only in serverless (Vercel/Lambda). Only `/tmp` is writable. `/tmp` is ephemeral — persistent data still uses Supabase.
+
+---
+
 ### 2026-07-16 - Security Barrier + Cerebras Integration + Dynamic RAG
 * **[NEW] Global Security Barrier** — Non-negotiable security rules injected into ALL system prompts (both inbound + outbound agents). Prevents:
   - AI/bot identity disclosure

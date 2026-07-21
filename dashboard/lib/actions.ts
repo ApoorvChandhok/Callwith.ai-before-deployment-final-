@@ -17,12 +17,14 @@ import {
 } from "@/lib/supabase/leads-actions";
 import { getCallLogsFromSupabase } from "@/lib/supabase/call-log-actions";
 
-// Define paths relative to the root project (one level up from dashboard)
-const DATA_DIR = path.join(process.cwd(), "..", "data");
-const LOGS_FILE = path.join(DATA_DIR, "call_logs.json");
-const LEADS_FILE = path.join(DATA_DIR, "leads.csv");
-const ANALYSIS_CACHE_FILE = path.join(DATA_DIR, "analysis_cache.json");
-const LEADS_META_FILE = path.join(DATA_DIR, "leads_meta.json");
+// Serverless-safe path helpers — writes go to /tmp in production (read-only FS)
+import { getReadPath, getWritePath } from "./paths";
+
+// Convenience wrappers (keeps the rest of the file readable)
+const LOGS_FILE        = () => getReadPath("call_logs.json");
+const LEADS_FILE       = () => getReadPath("leads.csv");
+const ANALYSIS_CACHE   = () => getReadPath("analysis_cache.json");
+const LEADS_META_FILE  = () => getReadPath("leads_meta.json");
 
 import crypto from "crypto";
 
@@ -53,8 +55,9 @@ export async function getCallLogs() {
     // Fallback to local JSON if Supabase has no records (only works in local dev)
     if (!localLogs || localLogs.length === 0) {
       try {
-        if (fs.existsSync(LOGS_FILE)) {
-          localLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+        const logsPath = LOGS_FILE();
+        if (fs.existsSync(logsPath)) {
+          localLogs = JSON.parse(fs.readFileSync(logsPath, "utf-8"));
         }
       } catch { /* skip in production */ }
     }
@@ -62,8 +65,9 @@ export async function getCallLogs() {
     // Load Groq Analysis Cache (local dev only)
     let analysisCache: Record<string, any> = {};
     try {
-      if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
-        analysisCache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
+      const cachePath = ANALYSIS_CACHE();
+      if (fs.existsSync(cachePath)) {
+        analysisCache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
       }
     } catch { /* skip in production */ }
     
@@ -271,8 +275,9 @@ export async function getCallLogsForLead(phone: string): Promise<any[]> {
     }
 
     // Fallback to local JSON
-    if (fs.existsSync(LOGS_FILE)) {
-      const localLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+    const logsPath2 = LOGS_FILE();
+    if (fs.existsSync(logsPath2)) {
+      const localLogs = JSON.parse(fs.readFileSync(logsPath2, "utf-8"));
       return localLogs
         .filter((log: any) => {
           const logPhone = (log.phone_number || "").replace(/[+\s]/g, "");
@@ -347,22 +352,23 @@ interface LeadMeta {
 
 function readLeadsMeta(): Record<string, LeadMeta> {
   try {
-    if (!fs.existsSync(LEADS_META_FILE)) return {};
-    return JSON.parse(fs.readFileSync(LEADS_META_FILE, "utf-8"));
+    const f = LEADS_META_FILE();
+    if (!fs.existsSync(f)) return {};
+    return JSON.parse(fs.readFileSync(f, "utf-8"));
   } catch {
     return {};
   }
 }
 
 function writeLeadsMeta(meta: Record<string, LeadMeta>) {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(LEADS_META_FILE, JSON.stringify(meta, null, 2), "utf-8");
+  fs.writeFileSync(getWritePath("leads_meta.json"), JSON.stringify(meta, null, 2), "utf-8");
 }
 
 function parseLeadsCsv(): { timestamp: string; name: string; phone: string; city: string }[] {
   try {
-    if (!fs.existsSync(LEADS_FILE)) return [];
-    const data = fs.readFileSync(LEADS_FILE, "utf-8");
+    const f = LEADS_FILE();
+    if (!fs.existsSync(f)) return [];
+    const data = fs.readFileSync(f, "utf-8");
     const lines = data.split("\n").filter(line => line.trim() !== "");
     if (lines.length <= 1) return [];
     return lines.slice(1).map(line => {
@@ -394,15 +400,17 @@ export async function getLeads(): Promise<EnrichedLead[]> {
     // Cross-reference call logs for sentiment, intent, call count
     let callLogs: any[] = [];
     try {
-      if (fs.existsSync(LOGS_FILE)) {
-        callLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+      const logsPath3 = LOGS_FILE();
+      if (fs.existsSync(logsPath3)) {
+        callLogs = JSON.parse(fs.readFileSync(logsPath3, "utf-8"));
       }
     } catch { /* ignore */ }
 
     let analysisCache: Record<string, any> = {};
     try {
-      if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
-        analysisCache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
+      const cachePath2 = ANALYSIS_CACHE();
+      if (fs.existsSync(cachePath2)) {
+        analysisCache = JSON.parse(fs.readFileSync(cachePath2, "utf-8"));
       }
     } catch { /* ignore */ }
 
@@ -694,27 +702,26 @@ export async function getCallDetails(id: string) {
       log.summary = analysis.short_summary;
       log.caller_intent = analysis.lead_info?.intent;
       
-      const ANALYSIS_CACHE_FILE = path.join(DATA_DIR, "analysis_cache.json");
       let cache: Record<string, any> = {};
-      if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
-        cache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
+      const cacheRead = ANALYSIS_CACHE();
+      if (fs.existsSync(cacheRead)) {
+        cache = JSON.parse(fs.readFileSync(cacheRead, "utf-8"));
       }
       cache[id] = analysis;
-      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(ANALYSIS_CACHE_FILE, JSON.stringify(cache, null, 2));
+      fs.writeFileSync(getWritePath("analysis_cache.json"), JSON.stringify(cache, null, 2));
 
       // If it's an inbound call and has lead info, add to CRM
       if (log.direction === "inbound" && analysis.lead_info?.name) {
-        const LEADS_FILE = path.join(DATA_DIR, "leads.csv");
         const newLeadLine = `"${log.timestamp}","${analysis.lead_info.name}","${log.phone_number}","${analysis.lead_info.city || 'Unknown'}"\n`;
-        if (fs.existsSync(LEADS_FILE)) {
+        const leadsRead = LEADS_FILE();
+        if (fs.existsSync(leadsRead)) {
           // Check if already exists to prevent duplicate
-          const content = fs.readFileSync(LEADS_FILE, "utf-8");
+          const content = fs.readFileSync(leadsRead, "utf-8");
           if (!content.includes(log.phone_number)) {
-            fs.appendFileSync(LEADS_FILE, newLeadLine);
+            fs.appendFileSync(getWritePath("leads.csv"), newLeadLine);
           }
         } else {
-          fs.writeFileSync(LEADS_FILE, `Timestamp,Name,Phone,City\n${newLeadLine}`);
+          fs.writeFileSync(getWritePath("leads.csv"), `Timestamp,Name,Phone,City\n${newLeadLine}`);
         }
       }
     }
@@ -1124,20 +1131,20 @@ export async function addNewLead(data: {
 }): Promise<boolean> {
   try {
     // Write to CSV
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (!fs.existsSync(LEADS_FILE)) {
-      fs.writeFileSync(LEADS_FILE, "Timestamp,Name,Phone,City\n");
+    const leadsRead = LEADS_FILE();
+    if (!fs.existsSync(leadsRead)) {
+      fs.writeFileSync(getWritePath("leads.csv"), "Timestamp,Name,Phone,City\n");
     }
 
     // Check for duplicate phone
-    const existing = fs.readFileSync(LEADS_FILE, "utf-8");
+    const existing = fs.existsSync(leadsRead) ? fs.readFileSync(leadsRead, "utf-8") : "";
     if (existing.includes(data.phone)) {
       return false; // Duplicate
     }
 
     const timestamp = new Date().toISOString();
     fs.appendFileSync(
-      LEADS_FILE,
+      getWritePath("leads.csv"),
       `"${timestamp}","${data.name}","${data.phone}","${data.city || ""}"\n`
     );
 
@@ -1182,13 +1189,14 @@ export async function addNewLead(data: {
 export async function deleteLead(phone: string): Promise<boolean> {
   try {
     // Remove from CSV
-    if (fs.existsSync(LEADS_FILE)) {
-      const data = fs.readFileSync(LEADS_FILE, "utf-8");
+    const leadsRead = LEADS_FILE();
+    if (fs.existsSync(leadsRead)) {
+      const data = fs.readFileSync(leadsRead, "utf-8");
       const lines = data.split("\n");
       const filtered = lines.filter(
         (line) => !line.includes(phone)
       );
-      fs.writeFileSync(LEADS_FILE, filtered.join("\n"));
+      fs.writeFileSync(getWritePath("leads.csv"), filtered.join("\n"));
     }
 
     // Remove from meta
@@ -1247,13 +1255,14 @@ export async function bulkUpdateLeads(
 export async function bulkDeleteLeads(phones: string[]): Promise<boolean> {
   try {
     // Remove from CSV
-    if (fs.existsSync(LEADS_FILE)) {
-      const data = fs.readFileSync(LEADS_FILE, "utf-8");
+    const leadsReadB = LEADS_FILE();
+    if (fs.existsSync(leadsReadB)) {
+      const data = fs.readFileSync(leadsReadB, "utf-8");
       const lines = data.split("\n");
       const filtered = lines.filter(
         (line) => !phones.some((p) => line.includes(p))
       );
-      fs.writeFileSync(LEADS_FILE, filtered.join("\n"));
+      fs.writeFileSync(getWritePath("leads.csv"), filtered.join("\n"));
     }
 
     // Remove from meta
@@ -1369,8 +1378,9 @@ export async function syncVobizRecordingAction(logId: string, phone: string, tim
       return { success: true, message: "Audio recording synced successfully!" };
     } else {
       // If it failed to update Supabase, maybe update local JSON
-      if (fs.existsSync(LOGS_FILE)) {
-        let callLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
+      const logsRead = LOGS_FILE();
+      if (fs.existsSync(logsRead)) {
+        let callLogs = JSON.parse(fs.readFileSync(logsRead, "utf-8"));
         let localUpdated = false;
         callLogs = callLogs.map((log: any) => {
           if (log.id === logId) {
@@ -1380,7 +1390,7 @@ export async function syncVobizRecordingAction(logId: string, phone: string, tim
           return log;
         });
         if (localUpdated) {
-          fs.writeFileSync(LOGS_FILE, JSON.stringify(callLogs, null, 2));
+          fs.writeFileSync(getWritePath("call_logs.json"), JSON.stringify(callLogs, null, 2));
           revalidatePath(`/logs/${logId}`);
           revalidatePath(`/logs`);
           return { success: true, message: "Audio synced (local JSON updated)." };

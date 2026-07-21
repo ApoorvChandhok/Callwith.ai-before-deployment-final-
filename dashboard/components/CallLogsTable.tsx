@@ -1,10 +1,60 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Activity, Clock, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { Activity, Clock, ChevronDown, ChevronUp, FileText, CheckCircle2, XCircle, RefreshCw, Upload } from "lucide-react";
 import Link from "next/link";
 
-const AGENT_DID = "918065480288";
+// Agent DID number - configurable via environment variable, falls back to default
+const AGENT_DID = process.env.NEXT_PUBLIC_AGENT_DID || "918065480288";
+
+// Format duration from seconds to MM:SS
+function formatDuration(seconds: number | string | undefined): string {
+  if (seconds == null || seconds === 0) return "0:00";
+  const totalSeconds = typeof seconds === "string" ? parseInt(seconds, 10) : seconds;
+  if (isNaN(totalSeconds)) return "0:00";
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
+// Sync to CRM function
+async function syncToCrm(log: any): Promise<boolean> {
+  try {
+    const response = await fetch("/api/real-estate/crm-sync", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        results: [
+          {
+            phone_number: log.phone_number || log.caller_number,
+            lead_name: log.user_info?.name || "",
+            lead_email: log.user_info?.email || "",
+            sentiment: log.sentiment || "",
+            intent: log.caller_intent || "",
+            status: "Called",
+            remarks: log.summary || "",
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error("CRM sync failed:", errorData.error || response.statusText);
+      return false;
+    }
+
+    const result = await response.json();
+    console.log("CRM sync result:", result);
+    return true;
+  } catch (error) {
+    console.error("CRM sync error:", error);
+    return false;
+  }
+}
 
 function formatCostINR(cost: string | number | undefined): string {
   if (cost == null) return "₹0.00";
@@ -116,6 +166,7 @@ function ExpandedDetails({ log, isExpanded }: { log: any; isExpanded: boolean })
 // ── Main table ───────────────────────────────────────────────────────────────
 export default function CallLogsTable({ logs, loading }: { logs: any[]; loading?: boolean }) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [syncingLogs, setSyncingLogs] = useState<Set<string>>(new Set());
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev => {
@@ -142,13 +193,14 @@ export default function CallLogsTable({ logs, loading }: { logs: any[]; loading?
               <th className="px-4 py-4 font-medium tracking-wider max-w-[200px]">What is said</th>
               <th className="px-4 py-4 font-medium tracking-wider">Metrics</th>
               <th className="px-4 py-4 font-medium tracking-wider">Sentiment</th>
+              <th className="px-4 py-4 font-medium tracking-wider">CRM Status</th>
               <th className="px-4 py-4 font-medium tracking-wider">Recording</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100/80 dark:divide-white/5">
             {logs.length === 0 && !loading ? (
               <tr>
-                <td colSpan={8} className="px-6 py-16 text-center text-gray-400 dark:text-[#8b949e]">
+                <td colSpan={9} className="px-6 py-16 text-center text-gray-400 dark:text-[#8b949e]">
                   <div className="flex flex-col items-center justify-center">
                     <Activity className="w-8 h-8 mb-3 text-gray-200 dark:text-[#30363d]" />
                     No calls logged yet. Complete a call to generate analytics.
@@ -212,7 +264,7 @@ export default function CallLogsTable({ logs, loading }: { logs: any[]; loading?
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="flex flex-col gap-0.5 text-xs">
-                          <span className="text-gray-500 dark:text-[#8b949e]">Dur: <span className="text-gray-800 dark:text-[#e6edf3] font-medium">{log.duration}s</span></span>
+                          <span className="text-gray-500 dark:text-[#8b949e]">Dur: <span className="text-gray-800 dark:text-[#e6edf3] font-medium">{formatDuration(log.duration)}</span></span>
                           <span className="text-gray-500 dark:text-[#8b949e]">MOS: <span className="text-gray-800 dark:text-[#e6edf3] font-medium">{log.mos}</span></span>
                           <span className="text-gray-500 dark:text-[#8b949e]">Cost: <span className="text-gray-800 dark:text-[#e6edf3] font-medium">{costDisplay}</span></span>
                         </div>
@@ -229,6 +281,48 @@ export default function CallLogsTable({ logs, loading }: { logs: any[]; loading?
                         </span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {log.crm_sync_status === "synced" ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-green-500 dark:text-[#2ea043]" />
+                              <span className="text-xs font-medium text-green-600 dark:text-[#2ea043]">Synced</span>
+                            </>
+                          ) : log.crm_sync_status === "pending" || syncingLogs.has(rowKey) ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 text-yellow-500 dark:text-[#d29922] animate-spin" />
+                              <span className="text-xs font-medium text-yellow-600 dark:text-[#d29922]">Syncing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-4 h-4 text-red-400 dark:text-[#f85149]" />
+                              <span className="text-xs font-medium text-red-500 dark:text-[#f85149]">Not Synced</span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setSyncingLogs(prev => new Set(prev).add(rowKey));
+                                  const success = await syncToCrm(log);
+                                  if (success) {
+                                    // Update the log's sync status
+                                    log.crm_sync_status = "synced";
+                                    // Force re-render
+                                    setExpandedRows(prev => new Set(prev));
+                                  }
+                                  setSyncingLogs(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(rowKey);
+                                    return newSet;
+                                  });
+                                }}
+                                className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-[#21262d] transition-colors"
+                                title="Sync to CRM"
+                              >
+                                <Upload className="w-3.5 h-3.5 text-blue-500 dark:text-[#2f81f7]" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
                         {hasRecording ? (
                           <Link
                             href={`/logs/${log.id}`}
@@ -236,7 +330,7 @@ export default function CallLogsTable({ logs, loading }: { logs: any[]; loading?
                             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-blue-600 dark:text-[#2f81f7] bg-blue-50 dark:bg-[#2f81f7]/10 border border-blue-200 dark:border-[#2f81f7]/20 rounded-md hover:bg-blue-100 dark:hover:bg-[#2f81f7]/20 transition-colors"
                           >
                             <Clock className="w-3.5 h-3.5" />
-                            {log.duration ? `${log.duration}s` : "Play"}
+                            {formatDuration(log.duration)}
                           </Link>
                         ) : (
                           <span className="text-gray-300 dark:text-[#30363d] text-xs">—</span>

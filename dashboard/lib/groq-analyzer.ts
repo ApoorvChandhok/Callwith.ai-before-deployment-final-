@@ -4,15 +4,22 @@ import path from "path";
 
 dotenv.config({ path: path.resolve(process.cwd(), "..", ".env") });
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+let _groq: Groq | null = null;
+
+function getGroq(): Groq {
+  if (!_groq) {
+    _groq = new Groq({
+      apiKey: process.env.GROQ_API_KEY
+    });
+  }
+  return _groq;
+}
 
 export async function analyzeTranscript(transcript: string) {
   if (!transcript || transcript.trim().length < 20) return null;
 
   try {
-    const chatCompletion = await groq.chat.completions.create({
+    const chatCompletion = await getGroq().chat.completions.create({
       messages: [
         {
           role: "system",

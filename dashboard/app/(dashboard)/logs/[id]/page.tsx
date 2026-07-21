@@ -10,7 +10,8 @@ import SyncRecordingButton from "@/components/SyncRecordingButton";
 export const dynamic = "force-dynamic";
 
 
-const AGENT_DID = "918065480288";
+// Agent DID number - configurable via environment variable, falls back to default
+const AGENT_DID = process.env.NEXT_PUBLIC_AGENT_DID || "918065480288";
 
 // VoBiz total_cost is already in INR — format directly, no conversion needed
 function formatCostINR(cost: string | number | undefined): string {

@@ -1,24 +1,20 @@
 "use server";
 
 import fs from "fs";
-import path from "path";
 import type { Workflow } from "./workflow-types";
 
-const DATA_DIR = path.join(process.cwd(), "..", "data");
-const WORKFLOWS_FILE = path.join(DATA_DIR, "workflows.json");
+// Serverless-safe path helpers — writes go to /tmp in production
+import { getReadPath, getWritePath } from "./paths";
+
+const WORKFLOWS_FILE = () => getReadPath("workflows.json");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
 function readWorkflows(): Workflow[] {
   try {
-    if (!fs.existsSync(WORKFLOWS_FILE)) return [];
-    const raw = fs.readFileSync(WORKFLOWS_FILE, "utf-8");
+    const f = WORKFLOWS_FILE();
+    if (!fs.existsSync(f)) return [];
+    const raw = fs.readFileSync(f, "utf-8");
     return JSON.parse(raw);
   } catch {
     return [];
@@ -26,8 +22,7 @@ function readWorkflows(): Workflow[] {
 }
 
 function writeWorkflows(workflows: Workflow[]) {
-  ensureDataDir();
-  fs.writeFileSync(WORKFLOWS_FILE, JSON.stringify(workflows, null, 2), "utf-8");
+  fs.writeFileSync(getWritePath("workflows.json"), JSON.stringify(workflows, null, 2), "utf-8");
 }
 
 function generateId(): string {

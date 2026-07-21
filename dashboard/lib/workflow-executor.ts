@@ -7,10 +7,10 @@
  */
 
 import fs from "fs";
-import path from "path";
 import type { Workflow, WorkflowNode, WorkflowEdge } from "./workflow-types";
 import { resolveConfigTemplates, evaluateSwitchRule } from "./expression-engine";
 import type { ExpressionContext } from "./expression-engine";
+import { getReadPath, getWritePath } from "./paths";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,27 +36,22 @@ export interface WorkflowRun {
   steps: WorkflowRunStep[];
 }
 
-// ── Storage ───────────────────────────────────────────────────────────────────
+// ── Storage ────────────────────────────────────────────────────────────────────────
 
-const DATA_DIR = path.join(process.cwd(), "..", "data");
-const RUNS_FILE = path.join(DATA_DIR, "workflow_runs.json");
-const QUEUE_FILE = path.join(DATA_DIR, "workflow_queue.json");
-
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+const RUNS_FILE  = () => getReadPath("workflow_runs.json");
+const QUEUE_FILE = () => getReadPath("workflow_queue.json");
 
 function readRuns(): WorkflowRun[] {
   try {
-    if (!fs.existsSync(RUNS_FILE)) return [];
-    return JSON.parse(fs.readFileSync(RUNS_FILE, "utf-8"));
+    const f = RUNS_FILE();
+    if (!fs.existsSync(f)) return [];
+    return JSON.parse(fs.readFileSync(f, "utf-8"));
   } catch {
     return [];
   }
 }
 
 function writeRun(run: WorkflowRun) {
-  ensureDataDir();
   const runs = readRuns();
   const existingIdx = runs.findIndex((r) => r.id === run.id);
   if (existingIdx >= 0) {
@@ -64,7 +59,7 @@ function writeRun(run: WorkflowRun) {
   } else {
     runs.unshift(run);
   }
-  fs.writeFileSync(RUNS_FILE, JSON.stringify(runs.slice(0, 500), null, 2), "utf-8");
+  fs.writeFileSync(getWritePath("workflow_runs.json"), JSON.stringify(runs.slice(0, 500), null, 2), "utf-8");
 }
 
 function generateRunId(): string {
@@ -86,16 +81,16 @@ export interface QueueEntry {
 
 function readQueue(): QueueEntry[] {
   try {
-    if (!fs.existsSync(QUEUE_FILE)) return [];
-    return JSON.parse(fs.readFileSync(QUEUE_FILE, "utf-8"));
+    const f = QUEUE_FILE();
+    if (!fs.existsSync(f)) return [];
+    return JSON.parse(fs.readFileSync(f, "utf-8"));
   } catch {
     return [];
   }
 }
 
 function writeQueue(queue: QueueEntry[]) {
-  ensureDataDir();
-  fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2), "utf-8");
+  fs.writeFileSync(getWritePath("workflow_queue.json"), JSON.stringify(queue, null, 2), "utf-8");
 }
 
 export function enqueueDelayedExecution(entry: QueueEntry) {
@@ -139,7 +134,7 @@ async function executeActionNode(
 
   try {
     if (type === "send_gmail") {
-      const integrationsFile = path.join(DATA_DIR, "integrations.json");
+      const integrationsFile = getReadPath("integrations.json");
       let gmailTokens: { access_token?: string; refresh_token?: string } = {};
       try {
         if (fs.existsSync(integrationsFile)) {
@@ -169,7 +164,7 @@ async function executeActionNode(
     }
 
     if (type === "read_csv_leads") {
-      const csvPath = path.resolve(process.cwd(), "..", resolvedConfig.filePath || "data/leads.csv");
+      const csvPath = getReadPath(resolvedConfig.filePath || "leads.csv");
       if (!fs.existsSync(csvPath)) {
         return { success: false, output: {}, error: `File not found: ${csvPath}` };
       }
@@ -255,66 +250,66 @@ async function executeActionNode(
     if (type === "update_lead_status") {
       const phone = ctx.lead?.phone || ctx.$json?.phone || "";
       if (!phone) return { success: false, output: {}, error: "No phone number in context" };
-      const leadsMetaFile = path.join(DATA_DIR, "leads_meta.json");
-      const meta: Record<string, any> = fs.existsSync(leadsMetaFile)
-        ? JSON.parse(fs.readFileSync(leadsMetaFile, "utf-8"))
+      const leadsMetaRead = getReadPath("leads_meta.json");
+      const meta: Record<string, any> = fs.existsSync(leadsMetaRead)
+        ? JSON.parse(fs.readFileSync(leadsMetaRead, "utf-8"))
         : {};
       if (!meta[phone]) meta[phone] = {};
       meta[phone].status = resolvedConfig.newStatus;
       meta[phone].lastActivity = new Date().toISOString();
-      fs.writeFileSync(leadsMetaFile, JSON.stringify(meta, null, 2), "utf-8");
+      fs.writeFileSync(getWritePath("leads_meta.json"), JSON.stringify(meta, null, 2), "utf-8");
       return { success: true, output: { phone, newStatus: resolvedConfig.newStatus } };
     }
 
     if (type === "add_tag") {
       const phone = ctx.lead?.phone || ctx.$json?.phone || "";
       if (!phone) return { success: false, output: {}, error: "No phone number in context" };
-      const leadsMetaFile = path.join(DATA_DIR, "leads_meta.json");
-      const meta: Record<string, any> = fs.existsSync(leadsMetaFile)
-        ? JSON.parse(fs.readFileSync(leadsMetaFile, "utf-8"))
+      const leadsMetaRead2 = getReadPath("leads_meta.json");
+      const meta: Record<string, any> = fs.existsSync(leadsMetaRead2)
+        ? JSON.parse(fs.readFileSync(leadsMetaRead2, "utf-8"))
         : {};
       if (!meta[phone]) meta[phone] = {};
       const tags: string[] = meta[phone].tags || [];
       if (!tags.includes(resolvedConfig.tagName)) tags.push(resolvedConfig.tagName);
       meta[phone].tags = tags;
       meta[phone].lastActivity = new Date().toISOString();
-      fs.writeFileSync(leadsMetaFile, JSON.stringify(meta, null, 2), "utf-8");
+      fs.writeFileSync(getWritePath("leads_meta.json"), JSON.stringify(meta, null, 2), "utf-8");
       return { success: true, output: { phone, tagAdded: resolvedConfig.tagName } };
     }
 
     if (type === "remove_tag") {
       const phone = ctx.lead?.phone || ctx.$json?.phone || "";
       if (!phone) return { success: false, output: {}, error: "No phone number in context" };
-      const leadsMetaFile = path.join(DATA_DIR, "leads_meta.json");
-      const meta: Record<string, any> = fs.existsSync(leadsMetaFile)
-        ? JSON.parse(fs.readFileSync(leadsMetaFile, "utf-8"))
+      const leadsMetaRead3 = getReadPath("leads_meta.json");
+      const meta: Record<string, any> = fs.existsSync(leadsMetaRead3)
+        ? JSON.parse(fs.readFileSync(leadsMetaRead3, "utf-8"))
         : {};
       if (!meta[phone]) meta[phone] = {};
       meta[phone].tags = (meta[phone].tags || []).filter((t: string) => t !== resolvedConfig.tagName);
       meta[phone].lastActivity = new Date().toISOString();
-      fs.writeFileSync(leadsMetaFile, JSON.stringify(meta, null, 2), "utf-8");
+      fs.writeFileSync(getWritePath("leads_meta.json"), JSON.stringify(meta, null, 2), "utf-8");
       return { success: true, output: { phone, tagRemoved: resolvedConfig.tagName } };
     }
 
     if (type === "add_note") {
       const phone = ctx.lead?.phone || ctx.$json?.phone || "";
       if (!phone) return { success: false, output: {}, error: "No phone number in context" };
-      const leadsMetaFile = path.join(DATA_DIR, "leads_meta.json");
-      const meta: Record<string, any> = fs.existsSync(leadsMetaFile)
-        ? JSON.parse(fs.readFileSync(leadsMetaFile, "utf-8"))
+      const leadsMetaRead4 = getReadPath("leads_meta.json");
+      const meta: Record<string, any> = fs.existsSync(leadsMetaRead4)
+        ? JSON.parse(fs.readFileSync(leadsMetaRead4, "utf-8"))
         : {};
       if (!meta[phone]) meta[phone] = {};
       if (!meta[phone].notes) meta[phone].notes = [];
       meta[phone].notes.push({ text: resolvedConfig.noteText, timestamp: new Date().toISOString() });
       meta[phone].lastActivity = new Date().toISOString();
-      fs.writeFileSync(leadsMetaFile, JSON.stringify(meta, null, 2), "utf-8");
+      fs.writeFileSync(getWritePath("leads_meta.json"), JSON.stringify(meta, null, 2), "utf-8");
       return { success: true, output: { phone, noteAdded: true } };
     }
 
     if (type === "send_notification") {
-      const notificationsFile = path.join(DATA_DIR, "notifications.json");
-      const notifications: any[] = fs.existsSync(notificationsFile)
-        ? JSON.parse(fs.readFileSync(notificationsFile, "utf-8"))
+      const notificationsRead = getReadPath("notifications.json");
+      const notifications: any[] = fs.existsSync(notificationsRead)
+        ? JSON.parse(fs.readFileSync(notificationsRead, "utf-8"))
         : [];
       notifications.unshift({
         id: `notif_${Date.now()}`,
@@ -323,7 +318,7 @@ async function executeActionNode(
         timestamp: new Date().toISOString(),
         read: false,
       });
-      fs.writeFileSync(notificationsFile, JSON.stringify(notifications.slice(0, 200), null, 2), "utf-8");
+      fs.writeFileSync(getWritePath("notifications.json"), JSON.stringify(notifications.slice(0, 200), null, 2), "utf-8");
       return { success: true, output: { notified: true } };
     }
 
@@ -456,11 +451,11 @@ async function executeActionNode(
       const sheetName = resolvedConfig.sheetName || "Sheet1";
       if (!spreadsheetId) return { success: false, output: {}, error: "No spreadsheet ID provided" };
       // Reuse Gmail OAuth tokens for Google Sheets API
-      const integrationsFile = path.join(DATA_DIR, "integrations.json");
+      const integrationsFile2 = getReadPath("integrations.json");
       let accessToken = "";
       try {
-        if (fs.existsSync(integrationsFile)) {
-          const integ = JSON.parse(fs.readFileSync(integrationsFile, "utf-8"));
+        if (fs.existsSync(integrationsFile2)) {
+          const integ = JSON.parse(fs.readFileSync(integrationsFile2, "utf-8"));
           accessToken = integ.gmail?.access_token || "";
         }
       } catch {}
@@ -488,11 +483,11 @@ async function executeActionNode(
       const endTime = resolvedConfig.endTime || new Date(Date.now() + 3600000).toISOString();
       const description = resolvedConfig.description || "";
       const location = resolvedConfig.location || "";
-      const integrationsFile = path.join(DATA_DIR, "integrations.json");
+      const integrationsFile3 = getReadPath("integrations.json");
       let accessToken = "";
       try {
-        if (fs.existsSync(integrationsFile)) {
-          const integ = JSON.parse(fs.readFileSync(integrationsFile, "utf-8"));
+        if (fs.existsSync(integrationsFile3)) {
+          const integ = JSON.parse(fs.readFileSync(integrationsFile3, "utf-8"));
           accessToken = integ.gmail?.access_token || "";
         }
       } catch {}
@@ -601,7 +596,7 @@ async function executeActionNode(
     if (type === "sub_workflow") {
       const subWorkflowId = resolvedConfig.workflowId || "";
       if (!subWorkflowId) return { success: false, output: {}, error: "No sub-workflow ID provided" };
-      const workflowsFile = path.join(DATA_DIR, "workflows.json");
+      const workflowsFile = getReadPath("workflows.json");
       if (!fs.existsSync(workflowsFile)) return { success: false, output: {}, error: "No workflows found" };
       const allWorkflows = JSON.parse(fs.readFileSync(workflowsFile, "utf-8"));
       const subWf = allWorkflows.find((w: any) => w.id === subWorkflowId);
@@ -1031,9 +1026,9 @@ export async function executeWorkflow(
   // ── Error Workflow Chaining (n8n-style) ──
   if (hasError && workflow.errorWorkflowId) {
     try {
-      const workflowsFile = path.join(DATA_DIR, "workflows.json");
-      if (fs.existsSync(workflowsFile)) {
-        const allWorkflows = JSON.parse(fs.readFileSync(workflowsFile, "utf-8"));
+      const workflowsFile2 = getReadPath("workflows.json");
+      if (fs.existsSync(workflowsFile2)) {
+        const allWorkflows = JSON.parse(fs.readFileSync(workflowsFile2, "utf-8"));
         const errorWf = allWorkflows.find((w: any) => w.id === workflow.errorWorkflowId);
         if (errorWf) {
           console.log(`[WorkflowExecutor] Triggering error workflow: ${errorWf.name} (${errorWf.id})`);
