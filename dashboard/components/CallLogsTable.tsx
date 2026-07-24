@@ -102,6 +102,18 @@ function ExpandedDetails({ log, isExpanded }: { log: any; isExpanded: boolean })
                   </p>
                 </div>
 
+                {log.transcript && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-blue-500" />
+                      Transcript
+                    </h4>
+                    <div className="text-xs text-gray-600 dark:text-[#8b949e] bg-white dark:bg-[#161b22] p-3 rounded-lg border border-gray-200/50 dark:border-white/5 shadow-sm max-h-40 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                      {log.transcript}
+                    </div>
+                  </div>
+                )}
+
                 {Object.keys(log.user_info || {}).length > 0 && (
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Extracted Information</h4>

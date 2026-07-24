@@ -1,4 +1,4 @@
-import { getCallDetails } from "@/lib/actions";
+import { getCallDetailFromSupabase } from "@/lib/supabase/call-log-actions";
 import { ArrowLeft, Clock, Phone, Activity, Mic, BrainCircuit, PlayCircle, BarChart3, TrendingUp, AlertTriangle, Headphones, User } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -29,7 +29,7 @@ function getCallerNumber(log: any): string {
 
 export default async function SingleCallPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const log = await getCallDetails(id);
+  const log = await getCallDetailFromSupabase(id);
 
   if (!log) {
     notFound();

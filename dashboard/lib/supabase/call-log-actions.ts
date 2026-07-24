@@ -2,6 +2,7 @@
 
 import { createClient } from "./server";
 import { getEffectiveBusinessId } from "./leads-actions";
+import { analyzeTranscript } from "@/lib/groq-analyzer";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,9 @@ function mapCallLogRow(row: Record<string, any>): any {
     caller_intent: row.caller_intent,
     campaign_id: row.campaign_id,
     room_name: row.room_name,
+    sip_call_id: row.room_name,           // Vobiz sip_call_id stored in room_name column
+    mos: 4.2,                              // Default MOS — not stored in Supabase
+    mode: row.direction === "inbound" ? "Voice Agent" : "Outbound Dialer",
     // Fake cost fields to not break UI if Vobiz data is missing
     cost: 0,
     recording_cost: 0,
@@ -60,6 +64,76 @@ export async function getCallLogsFromSupabase(): Promise<any[]> {
   } catch (err) {
     console.error("[getCallLogsFromSupabase] exception:", err);
     return [];
+  }
+}
+
+/**
+ * Fetch a single call log by ID directly from Supabase.
+ * Used by /logs/[id] detail page — replaces the heavy getCallLogs() + find() path.
+ * Includes on-demand Groq AI enrichment for sentiment/summary/caller_intent.
+ */
+export async function getCallDetailFromSupabase(id: string): Promise<any | null> {
+  try {
+    const { businessId } = await getEffectiveBusinessId();
+    if (!businessId) return null;
+
+    const supabase = await createClient();
+
+    const { data: row, error } = await supabase
+      .from("call_logs")
+      .select("*")
+      .eq("id", id)
+      .eq("business_id", businessId)
+      .single();
+
+    if (error || !row) {
+      console.error("[getCallDetailFromSupabase] not found or error:", error?.message ?? "no row");
+      return null;
+    }
+
+    const log = mapCallLogRow(row);
+
+    // ── On-demand Groq AI enrichment ──────────────────────────────────────────
+    // If transcript is long enough and sentiment/summary are missing or default,
+    // run Groq analysis and persist results back to Supabase.
+    const transcript = log.transcript || "";
+    const needsEnrichment =
+      transcript.length > 50 &&
+      (!log.sentiment || log.sentiment === "Neutral" || !log.summary || log.summary === "");
+
+    if (needsEnrichment) {
+      try {
+        console.log(`[getCallDetailFromSupabase] Running Groq enrichment for log: ${id}`);
+        const analysis = await analyzeTranscript(transcript);
+
+        if (analysis) {
+          log.sentiment = analysis.sentiment || log.sentiment;
+          log.summary = analysis.short_summary || log.summary;
+          log.caller_intent = analysis.lead_info?.intent || log.caller_intent;
+
+          // Persist enrichment back to Supabase so subsequent reads are instant
+          await supabase
+            .from("call_logs")
+            .update({
+              sentiment: log.sentiment,
+              summary: log.summary,
+              caller_intent: log.caller_intent,
+            })
+            .eq("id", id)
+            .eq("business_id", businessId);
+
+          console.log(`[getCallDetailFromSupabase] Enrichment saved for log: ${id}`);
+        }
+      } catch (enrichErr) {
+        console.warn(`[getCallDetailFromSupabase] Groq enrichment failed:`, enrichErr);
+        // Continue with whatever data we have — don't fail the page
+      }
+    }
+
+    return log;
+  } catch (err) {
+    console.error("[getCallDetailFromSupabase] exception:", err);
+    return null;
   }
 }
 
@@ -307,16 +381,24 @@ export async function syncVobizToSupabase(): Promise<SyncResult> {
     return { ...empty, message: "No CDRs found in Vobiz account" };
   }
 
-  // Build lookup maps
+  // Build lookup maps — index recordings by multiple keys for robust matching
   const txMap = new Map<string, any>();
   for (const t of transcripts) {
     const key = t.call_uuid || t.sip_call_id;
     if (key) txMap.set(key, t);
   }
   const recMap = new Map<string, any>();
+  const recByPhone = new Map<string, any[]>(); // secondary index by phone number
   for (const r of recordings) {
     const key = r.call_uuid || r.sip_call_id;
     if (key) recMap.set(key, r);
+    // Also index by phone number for secondary matching
+    const phone = r.caller_id_number || r.destination_number || r.from_number || r.to_number;
+    if (phone) {
+      const clean = phone.replace(/\D/g, "");
+      if (!recByPhone.has(clean)) recByPhone.set(clean, []);
+      recByPhone.get(clean)!.push(r);
+    }
   }
 
   let upserted = 0;
@@ -327,7 +409,26 @@ export async function syncVobizToSupabase(): Promise<SyncResult> {
     const batch = cdrs.slice(i, i + BATCH);
     const rows = batch.map((cdr: any) => {
       const tx = txMap.get(cdr.sip_call_id) ?? txMap.get(cdr.uuid);
-      const rec = recMap.get(cdr.sip_call_id) ?? recMap.get(cdr.uuid);
+      let rec = recMap.get(cdr.sip_call_id) ?? recMap.get(cdr.uuid);
+
+      // Secondary match: if no recording found by UUID, try phone + time proximity
+      if (!rec) {
+        const cdrPhone = (cdr.caller_id_number || cdr.destination_number || "").replace(/\D/g, "");
+        const cdrTime = new Date(cdr.start_time || cdr.timestamp || Date.now()).getTime();
+        const candidates = recByPhone.get(cdrPhone) || [];
+        let bestMatch: any = null;
+        let minDiff = Infinity;
+        for (const c of candidates) {
+          const cTime = new Date(c.start_time || c.timestamp || c.created_at || Date.now()).getTime();
+          const diff = Math.abs(cdrTime - cTime);
+          if (diff < minDiff && diff < 1000 * 60 * 5) { // within 5 minutes
+            minDiff = diff;
+            bestMatch = c;
+          }
+        }
+        if (bestMatch) rec = bestMatch;
+      }
+
       const isInbound = (cdr.call_direction ?? "").toLowerCase() === "inbound";
 
       return {
@@ -346,7 +447,7 @@ export async function syncVobizToSupabase(): Promise<SyncResult> {
         audio_url: rec?.url ?? rec?.recording_url ?? rec?.audio_url ?? null,
         room_name: cdr.sip_call_id ?? null,
         created_at: cdr.start_time ?? new Date().toISOString(),
-        caller_intent: null,
+        caller_intent: tx?.intent || tx?.caller_intent || null,
         campaign_id: null,
       };
     });

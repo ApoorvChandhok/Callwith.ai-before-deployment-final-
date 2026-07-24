@@ -259,7 +259,72 @@ export async function GET(
     });
   }
 
-  // 2. If not found locally, proxy it from the Vobiz API
+  // 2. Try to get the recording URL from Supabase (audio_url stored during Vobiz sync)
+  const inputUuid = filename.replace(/\.\w+$/, "");
+  try {
+    const { createClient } = await import("@/lib/supabase/server");
+    const { getEffectiveBusinessId } = await import("@/lib/supabase/leads-actions");
+    const { businessId } = await getEffectiveBusinessId();
+    if (businessId) {
+      const supabase = await createClient();
+      const { data: row } = await supabase
+        .from("call_logs")
+        .select("audio_url")
+        .eq("room_name", inputUuid)
+        .eq("business_id", businessId)
+        .single();
+
+      if (row?.audio_url) {
+        console.log(`[Recordings] Found audio_url in Supabase for ${inputUuid}: ${row.audio_url}`);
+        const audioUrl = row.audio_url;
+
+        // Download and serve the audio from the direct URL
+        try {
+          const authId2 = process.env.VOBIZ_AUTH_ID;
+          const authToken2 = process.env.VOBIZ_AUTH_TOKEN;
+          const audioRes = await fetch(audioUrl, {
+            headers: (authId2 && authToken2)
+              ? { "X-Auth-ID": authId2, "X-Auth-Token": authToken2 }
+              : {},
+          });
+
+          if (audioRes.ok) {
+            const arrayBuffer = await audioRes.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
+            if (isAudioBuffer(buffer)) {
+              const contentType = detectContentType("", buffer) || detectContentType(audioUrl) || "audio/wav";
+
+              // Cache locally
+              try {
+                if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+                fs.writeFileSync(path.join(RECORDINGS_DIR, filename), buffer);
+              } catch {}
+
+              console.log(`[Recordings] ✅ Served from Supabase audio_url: ${buffer.length} bytes`);
+              return new NextResponse(new Uint8Array(buffer), {
+                headers: {
+                  "Content-Type": contentType,
+                  "Content-Length": buffer.length.toString(),
+                  "Accept-Ranges": "bytes",
+                }
+              });
+            } else {
+              console.error(`[Recordings] audio_url returned non-audio data`);
+            }
+          } else {
+            console.error(`[Recordings] audio_url fetch failed: ${audioRes.status}`);
+          }
+        } catch (fetchErr) {
+          console.error(`[Recordings] audio_url download error:`, fetchErr);
+        }
+      }
+    }
+  } catch (dbErr) {
+    console.warn(`[Recordings] Supabase lookup failed:`, dbErr);
+  }
+
+  // 3. If not found locally or in Supabase, proxy from Vobiz API
   const { authId, authToken } = loadVobizCredentials();
 
   if (!authId || !authToken) {
@@ -274,11 +339,59 @@ export async function GET(
   };
 
   try {
-    const inputUuid = filename.replace(/\.\w+$/, ""); // Strip any extension (e.g., .wav)
     console.log(`[Recordings] Looking up recording for: ${inputUuid}`);
 
-    // Search for the recording on Vobiz (matches both call UUID and recording UUID)
-    const found = await findVobizRecording(inputUuid, authId, headers);
+    // Strategy 1: Try direct Vobiz recording detail API (fastest — no pagination)
+    let found: { recordingUuid: string; meta: any } | null = null;
+    try {
+      const detailUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Recording/${inputUuid}/`;
+      const detailRes = await fetch(detailUrl, { headers });
+      if (detailRes.ok) {
+        const detail = await detailRes.json();
+        const recUuid = detail.uuid || detail.id || detail.recording_id || inputUuid;
+        console.log(`[Recordings] Direct detail lookup succeeded for: ${inputUuid}`);
+        found = { recordingUuid: recUuid, meta: detail };
+      } else {
+        console.log(`[Recordings] Direct detail lookup returned ${detailRes.status} for: ${inputUuid}`);
+      }
+    } catch (e) {
+      console.log(`[Recordings] Direct detail lookup failed:`, e);
+    }
+
+    // Strategy 2: Search Vobiz recording list (matches call_uuid, sip_call_id, uuid, id)
+    if (!found) {
+      found = await findVobizRecording(inputUuid, authId, headers);
+    }
+
+    // Strategy 3: Try downloading directly from Vobiz media URLs with the UUID
+    if (!found) {
+      console.log(`[Recordings] List search failed, trying direct media URLs...`);
+      const extensions = [".wav", ".mp3", ".ogg", ".m4a"];
+      for (const ext of extensions) {
+        const tryUrl = `https://media.vobiz.ai/v1/Account/${authId}/Recording/${inputUuid}${ext}`;
+        try {
+          const tryRes = await fetch(tryUrl, { method: "HEAD", headers });
+          if (tryRes.ok) {
+            console.log(`[Recordings] Found at media URL: ${tryUrl}`);
+            const result = await tryDownloadAudio(tryUrl, authId, authToken);
+            if (result) {
+              // Cache locally
+              try {
+                if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+                fs.writeFileSync(path.join(RECORDINGS_DIR, filename), result.buffer);
+              } catch {}
+              return new NextResponse(new Uint8Array(result.buffer), {
+                headers: {
+                  "Content-Type": result.contentType,
+                  "Content-Length": result.buffer.length.toString(),
+                  "Accept-Ranges": "bytes",
+                }
+              });
+            }
+          }
+        } catch {}
+      }
+    }
 
     if (found) {
       const result = await downloadFromVobiz(found.recordingUuid, authId, authToken, headers);

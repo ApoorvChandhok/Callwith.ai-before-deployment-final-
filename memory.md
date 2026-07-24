@@ -3,6 +3,13 @@
 ---
 ## Changelog
 
+### 2026-07-23 - Sentiment Analysis Loading Fix for All Call Logs (Pagination + Infinite Scroll)
+
+* **[FIX] `dashboard/app/(dashboard)/logs/page.tsx`** — Completely reworked enrichment logic. Previously, enrichment only ran once on mount via a `useEffect([])` and only covered the first 50 logs. Now: (1) A `enrichNewLogs` `useCallback` is defined before `fetchLogs` and called after every page/batch loads (`setTimeout(..., 1500)`). (2) Uses a module-level `sessionEnrichedIds` Set to track which IDs have already been enriched this session — prevents duplicate AI calls on re-renders or pagination changes. (3) Updates local log state directly from the enrichment API response without a full re-fetch — keeps infinite scroll state intact.
+* **[FIX] `dashboard/app/api/call-logs/enrich/route.ts`** — Added `?ids=id1,id2,...` query param for targeted enrichment of specific call IDs (used by per-page enrichment). Increased global enrichment window from 200 to 500 calls. Now returns `enrichedResults` dict in response (keyed by call ID) so the client can update state immediately without a round-trip DB fetch.
+
+---
+
 ### 2026-07-21 - Vobiz → Supabase Sync on Refresh + Proper Pagination
 
 * **[NEW] `dashboard/lib/supabase/call-log-actions.ts`** — Added `syncVobizToSupabase()`: fetches all CDRs, transcripts, and recordings from Vobiz API (paginated), merges them, and upserts into the `call_logs` Supabase table using `cdr.uuid` as the idempotent primary key. Batches in groups of 50.

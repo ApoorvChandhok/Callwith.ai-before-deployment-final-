@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import CallLogsTable from "@/components/CallLogsTable";
 import { RefreshCw, Search, Filter, Calendar, Loader2, Upload, DatabaseZap } from "lucide-react";
 
+// Session-level cache: track IDs that were already enriched this session
+// so we don't re-hit the AI when re-rendering or navigating back
+const sessionEnrichedIds = new Set<string>();
+
 export const dynamic = "force-dynamic";
 
 const LIMIT = 25;
@@ -62,6 +66,64 @@ export default function LogsPage() {
     setPage(1);
     setLogs([]);
   }, [debouncedSearch, startDate, endDate, sentiment, direction]);
+
+  // ── Per-batch enrichment: runs after every page of logs loads ───────────────
+  // Checks newly loaded logs for missing sentiment/summary. If found, calls
+  // the enrich API targeting only those specific IDs. On success, updates
+  // local state directly from the response (no full re-fetch needed).
+  // Uses a session-level Set to avoid re-enriching IDs that were already
+  // processed in this browser session.
+  const enrichNewLogs = useCallback(async (newLogs: any[]) => {
+    // Find logs in this batch that are missing sentiment and haven't been
+    // enriched yet this session
+    const missingIds = newLogs
+      .filter((log) => {
+        if (sessionEnrichedIds.has(log.id)) return false; // already enriched this session
+        const hasSentiment = log.sentiment && log.sentiment !== "Neutral";
+        const hasSummary = log.summary && log.summary.length >= 10;
+        const hasIntent = !!log.caller_intent;
+        // Only enrich if at least one field is missing
+        return !hasSentiment || !hasSummary || !hasIntent;
+      })
+      .map((log) => log.id);
+
+    if (missingIds.length === 0) return;
+
+    // Mark as "in-flight" immediately to prevent duplicate enrichment calls
+    missingIds.forEach((id) => sessionEnrichedIds.add(id));
+
+    try {
+      const res = await fetch(
+        `/api/call-logs/enrich?ids=${missingIds.join(",")}`,
+        { method: "POST", cache: "no-store" }
+      );
+      if (!res.ok) return;
+
+      const result = await res.json();
+      if (result.enriched > 0 && result.enrichedResults) {
+        console.log(`[Enrich] Enriched ${result.enriched} calls on current page`);
+        // Update just the affected log entries in state — no full re-fetch
+        setLogs((prev) =>
+          prev.map((log) => {
+            const update = result.enrichedResults[log.id];
+            if (update) {
+              return {
+                ...log,
+                sentiment: update.sentiment ?? log.sentiment,
+                summary: update.summary ?? log.summary,
+                caller_intent: update.caller_intent ?? log.caller_intent,
+              };
+            }
+            return log;
+          })
+        );
+      }
+    } catch {
+      // Silent fail — enrichment is best-effort
+      // Remove from session cache so they can be retried later
+      missingIds.forEach((id) => sessionEnrichedIds.delete(id));
+    }
+  }, []);
 
   // ── Core fetch (reads from Supabase via API) ────────────────────────────────
   const fetchLogs = useCallback(
@@ -130,6 +192,10 @@ export default function LogsPage() {
         setTotal(data.total ?? 0);
         setTotalPages(data.totalPages ?? 1);
         setHasMore(data.hasMore ?? false);
+
+        // Trigger enrichment for this batch after a short delay
+        // (allows the UI to render first, then enrichment runs in background)
+        setTimeout(() => enrichNewLogs(fetched), 1500);
       } catch (e: any) {
         setError(e.message ?? "Failed to load call logs");
       } finally {
@@ -138,7 +204,7 @@ export default function LogsPage() {
         setRefreshing(false);
       }
     },
-    [page, startDate, endDate, debouncedSearch, sentiment, direction]
+    [page, startDate, endDate, debouncedSearch, sentiment, direction, enrichNewLogs]
   );
 
   // Initial load + page changes
