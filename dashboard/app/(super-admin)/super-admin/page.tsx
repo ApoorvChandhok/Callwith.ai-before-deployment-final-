@@ -349,42 +349,12 @@ export default function SuperAdminPage() {
                   </svg>
                 </button>
 
-                {/* Delete — two-step confirm */}
-                {confirmDeleteId === ws.id ? (
-                  <>
-                    <button
-                      onClick={() => handleDelete(ws)}
-                      disabled={deletingId === ws.id}
-                      title="Confirm delete"
-                      className="px-2 py-1 rounded text-[10px] font-semibold bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 transition-all disabled:opacity-50"
-                    >
-                      {deletingId === ws.id ? '…' : 'Delete'}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      title="Cancel"
-                      className="p-1.5 rounded-lg hover:bg-white/[0.07] text-white/30 hover:text-white/60 transition-all"
-                    >
-                      <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                        <path d="M1 1l9 9M10 1L1 10"/>
-                      </svg>
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setConfirmDeleteId(ws.id)}
-                    title="Delete workspace"
-                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-all"
-                  >
-                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                      <path d="M2 3.5h9M4.5 3.5V2h4v1.5M5 6v4M8 6v4M3 3.5l.5 7h6l.5-7"/>
-                    </svg>
-                  </button>
-                )}
+
               </div>
             </div>
           ))
         )}
+
       </div>
 
       {/* Cost breakdown footnote */}
