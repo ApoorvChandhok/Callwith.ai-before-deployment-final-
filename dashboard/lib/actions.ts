@@ -1213,3 +1213,142 @@ export async function exportLeadsCsv(): Promise<string> {
   );
   return [headers, ...rows].join("\n");
 }
+
+// ── getCallLogsForLead ────────────────────────────────────────────────────────
+// Fetches all call logs from Supabase that match the given phone number.
+// Used by LeadDetailPanel to show the "Calls" tab for a specific lead.
+export async function getCallLogsForLead(phone: string): Promise<any[]> {
+  try {
+    const { createClient } = await import("@/lib/supabase/server");
+    const { getEffectiveBusinessId } = await import("@/lib/supabase/leads-actions");
+
+    const { businessId } = await getEffectiveBusinessId();
+    if (!businessId) return [];
+
+    const supabase = await createClient();
+
+    // Normalize the phone number — strip non-digits and compare last 10 digits
+    const normalized = phone.replace(/\D/g, "").slice(-10);
+
+    // Fetch all call_logs for this business, then filter by phone match
+    const { data, error } = await supabase
+      .from("call_logs")
+      .select("*")
+      .eq("business_id", businessId)
+      .or(`from_number.ilike.%${normalized}%,to_number.ilike.%${normalized}%`)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error("[getCallLogsForLead] error:", error.message);
+      return [];
+    }
+
+    return (data ?? []).map((row: any) => {
+      let transcriptText = "";
+      if (Array.isArray(row.transcript)) {
+        transcriptText = row.transcript.map((m: any) => m?.text || "").join("\n");
+      } else if (typeof row.transcript === "string") {
+        transcriptText = row.transcript;
+      }
+      return {
+        id: row.id,
+        timestamp: row.created_at,
+        phone_number: row.from_number || row.to_number || "",
+        direction: row.direction,
+        status: row.status,
+        duration: row.duration,
+        transcript: transcriptText,
+        recording_path: row.audio_url,
+        summary: row.summary,
+        sentiment: row.sentiment,
+        caller_intent: row.caller_intent,
+      };
+    });
+  } catch (err) {
+    console.error("[getCallLogsForLead] exception:", err);
+    return [];
+  }
+}
+
+// ── syncVobizRecordingAction ──────────────────────────────────────────────────
+// Looks up the recording URL for a call log from Vobiz and saves it to Supabase.
+// Used by SyncRecordingButton when a call log is missing its audio_url.
+export async function syncVobizRecordingAction(
+  logId: string,
+  phone: string,
+  timestamp: string
+): Promise<{ success: boolean; message: string; audioUrl?: string }> {
+  try {
+    const authId = process.env.VOBIZ_AUTH_ID;
+    const authToken = process.env.VOBIZ_AUTH_TOKEN;
+
+    if (!authId || !authToken) {
+      return { success: false, message: "Vobiz credentials not configured" };
+    }
+
+    const headers = {
+      "X-Auth-ID": authId,
+      "X-Auth-Token": authToken,
+      Accept: "application/json",
+    };
+
+    // Search Vobiz recordings for a match near the call timestamp
+    const res = await fetch(
+      `https://rest.vobiz.ai/api/v1/accounts/${authId}/recordings/?limit=100`,
+      { headers }
+    );
+
+    if (!res.ok) {
+      return { success: false, message: `Vobiz API error: ${res.status}` };
+    }
+
+    const data = await res.json();
+    const recordings: any[] = data.objects ?? data.results ?? data ?? [];
+
+    // Normalize phone for matching
+    const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+    const callTime = new Date(timestamp).getTime();
+
+    // Find a recording that matches by phone and is within 5 minutes of the call
+    const match = recordings.find((r: any) => {
+      const rPhone = (r.caller_id_number || r.destination_number || "")
+        .replace(/\D/g, "")
+        .slice(-10);
+      const rTime = new Date(r.start_time || r.created_at || 0).getTime();
+      return rPhone === normalizedPhone && Math.abs(rTime - callTime) < 5 * 60 * 1000;
+    });
+
+    if (!match) {
+      return { success: false, message: "No matching recording found in Vobiz" };
+    }
+
+    const audioUrl: string =
+      match.recording_url || match.media_url || match.url || "";
+
+    if (!audioUrl) {
+      return { success: false, message: "Recording found but URL is empty" };
+    }
+
+    // Save the URL back to Supabase
+    const { createClient } = await import("@/lib/supabase/server");
+    const { getEffectiveBusinessId } = await import("@/lib/supabase/leads-actions");
+    const { businessId } = await getEffectiveBusinessId();
+
+    if (businessId) {
+      const supabase = await createClient();
+      await supabase
+        .from("call_logs")
+        .update({ audio_url: audioUrl })
+        .eq("id", logId)
+        .eq("business_id", businessId);
+    }
+
+    revalidatePath("/logs");
+    return { success: true, message: "Recording synced successfully", audioUrl };
+  } catch (err: any) {
+    console.error("[syncVobizRecordingAction] error:", err);
+    return { success: false, message: err.message ?? "Unexpected error" };
+  }
+}
+
