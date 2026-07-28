@@ -1,74 +1,27 @@
 #!/bin/bash
+# Deployment script for Google Cloud Run (Dashboard)
 
-# Quick Deployment Script for GCP Cloud Run
-# Usage: ./deploy.sh [PROJECT_ID] [REGION]
+# Check if gcloud is installed
+if ! command -v gcloud &> /dev/null
+then
+    echo "gcloud CLI could not be found. Please install it first."
+    exit 1
+fi
 
-set -e
+echo "Deploying Dashboard to Google Cloud Run..."
 
-# Default values - Updated with your specific configuration
-PROJECT_ID=${1:-"callwith-ai"}
-REGION=${2:-"asia-south1"}
+# Set standard configuration matching the existing deployment
 SERVICE_NAME="callwith-dashboard"
-IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
+REGION="asia-south1"
 
-# Build-time variables (embedded into JS bundle during npm run build)
-SUPABASE_URL="https://yqvjwcinaefmxjhcojak.supabase.co"
-SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlxdmp3Y2luYWVmbXhqaGNvamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MDMxMzAsImV4cCI6MjA5NzI3OTEzMH0.zciudLmv4molA6P4bqdM0eAa2_ga-YtAvhCqa4k2I4Q"
+echo "Service: $SERVICE_NAME"
+echo "Region: $REGION"
 
-echo "🚀 Deploying ${SERVICE_NAME} to GCP Cloud Run..."
-echo "   Project: ${PROJECT_ID}"
-echo "   Region: ${REGION}"
-echo "   Service: ${SERVICE_NAME}"
-echo ""
+# Deploy using source (Cloud Build will automatically detect the Dockerfile)
+gcloud run deploy $SERVICE_NAME \
+    --source . \
+    --region $REGION \
+    --allow-unauthenticated \
+    --port 3000
 
-# Step 1: Build the Docker image with build args
-echo "📦 Building Docker image..."
-docker build \
-  --build-arg NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL} \
-  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY} \
-  --build-arg NEXT_PUBLIC_AGENT_DID=918065480288 \
-  -t ${IMAGE_NAME}:latest .
-
-# Step 2: Push to Google Container Registry
-echo "📤 Pushing to Container Registry..."
-docker push ${IMAGE_NAME}:latest
-
-# Step 3: Deploy to Cloud Run with secrets from Secret Manager
-echo "🔄 Deploying to Cloud Run..."
-gcloud run deploy ${SERVICE_NAME} \
-  --image ${IMAGE_NAME}:latest \
-  --platform managed \
-  --region ${REGION} \
-  --allow-unauthenticated \
-  --port 3000 \
-  --memory 512Mi \
-  --cpu 1 \
-  --min-instances 0 \
-  --max-instances 20 \
-  --set-env-vars "NODE_ENV=production,NEXT_PUBLIC_AGENT_DID=918065480288,NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL},NEXT_PUBLIC_BASE_URL=https://callwith-dashboard-972668869521.asia-south1.run.app,DASHBOARD_URL=https://callwith-dashboard-972668869521.asia-south1.run.app,VOBIZ_SIP_TRUNK_ID=ST_FN8TAbxQaYnn,VOBIZ_OUTBOUND_NUMBER=+918065480288,GEMINI_MODEL=gemini-2.5-flash" \
-  --update-secrets \
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY=supabase-anon-key:latest,\
-SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,\
-GEMINI_API_KEY=gemini-api-key:latest,\
-LIVEKIT_URL=livekit-url:latest,\
-LIVEKIT_API_KEY=livekit-api-key:latest,\
-LIVEKIT_API_SECRET=livekit-api-secret:latest,\
-DEEPGRAM_API_KEY=deepgram-api-key:latest,\
-VOBIZ_AUTH_ID=vobiz-auth-id:latest,\
-VOBIZ_AUTH_TOKEN=vobiz-auth-token:latest,\
-TOOL_GATEWAY_SECRET=tool-gateway-secret:latest,\
-CREDENTIALS_ENCRYPTION_KEY=credentials-encryption-key:latest,\
-GOOGLE_CLIENT_ID=google-client-id:latest,\
-GOOGLE_CLIENT_SECRET=google-client-secret:latest"
-
-# Step 4: Get the service URL
-echo ""
-echo "✅ Deployment complete!"
-echo ""
-echo "📋 Service URL:"
-gcloud run services describe ${SERVICE_NAME} --region ${REGION} --format="value(status.url)"
-
-echo ""
-echo "📝 Next steps:"
-echo "   1. Test the deployment"
-echo "   2. Check logs if needed: gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=${SERVICE_NAME}' --limit=50"
+echo "Deployment complete!"

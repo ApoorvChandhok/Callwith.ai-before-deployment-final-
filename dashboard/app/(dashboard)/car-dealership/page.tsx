@@ -532,8 +532,12 @@ export default function CarDealershipPage() {
     if (ragContent.trim()) {
       prompt += `\n\n## KNOWLEDGE BASE\nUse the following documents to answer client questions about car inventory. Only reference what is explicitly mentioned in these documents.\n\n${ragContent}`;
     }
+    const capitalizedName = ttsVoice.charAt(0).toUpperCase() + ttsVoice.slice(1);
+    prompt = prompt.replace(/Tum (Priya|Neha|Rahul|Rohan|Aditya|Ishita|Shreya) ho/, `Tum ${capitalizedName} ho`);
+    prompt = prompt.replace(/Main (Priya|Neha|Rahul|Rohan|Aditya|Ishita|Shreya) hoon/, `Main ${capitalizedName} hoon`);
+
     return prompt;
-  }, [customPrompt, buildRagContent]);
+  }, [customPrompt, buildRagContent, ttsVoice]);
 
   const startCampaign = async () => {
     if (validLeads.length === 0) return;
@@ -586,7 +590,13 @@ export default function CarDealershipPage() {
               campaignId: campId,
               leadRowIndex: leads.indexOf(lead),
               overrideSystemPrompt: true,
-              initialGreeting: `Hi! Main Neha hoon, AutoVerse se. Kaise hain aap?`,
+              initialGreeting: (() => {
+                const nameMatch = systemPrompt.match(/you are\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
+                const agentName = nameMatch ? nameMatch[1].split(" ")[0] : (ttsVoice.charAt(0).toUpperCase() + ttsVoice.slice(1));
+                const isFemale = /\b(she|her|priya|isha|neha|ria|priyanka|shreya|pooja|simran|kavya|ritu|roopa)\b/i.test(systemPrompt);
+                const verb = isFemale ? "bol rahi hoon" : "bol raha hoon";
+                return `Hi! Main ${agentName} ${verb}, AutoVerse se. Kaise hain aap?`;
+              })(),
               modelProvider: llmProvider,
               llmModel: llmModel,
               ttsProvider,

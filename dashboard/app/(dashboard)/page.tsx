@@ -1,6 +1,6 @@
 import { getOverviewStats } from "@/lib/actions";
 export const dynamic = "force-dynamic";
-import { Phone, CheckCircle, Hash, TrendingUp } from "lucide-react";
+import { Phone, CheckCircle, Hash, TrendingUp, Clock, Timer } from "lucide-react";
 import Link from "next/link";
 import GlobeWrapper from "@/components/GlobeWrapper";
 import DashboardCharts from "@/components/DashboardCharts";
@@ -52,22 +52,22 @@ export default async function Overview() {
       stagger: "stagger-4",
     },
     {
-      label: "Voice API Calls",
-      value: stats.voiceApiCalls,
-      change: stats.changes.voiceApiCalls,
+      label: "Minutes Consumed",
+      value: stats.totalMinutes,
+      change: stats.changes.totalMinutes,
       iconBg: "bg-orange-50 dark:bg-[#1A1510] border border-orange-500/20",
       iconColor: "text-orange-500",
-      icon: Phone,
+      icon: Clock,
       link: "/logs",
       stagger: "stagger-5",
     },
     {
-      label: "Active Numbers",
-      value: stats.activeNumbers,
-      change: stats.changes.activeNumbers,
+      label: "Avg Call Duration",
+      value: `${stats.avgDuration}s`,
+      change: stats.changes.avgDuration,
       iconBg: "bg-violet-50 dark:bg-[#151020] border border-violet-500/20",
       iconColor: "text-violet-500",
-      icon: Hash,
+      icon: Timer,
       stagger: "stagger-6",
     },
   ];

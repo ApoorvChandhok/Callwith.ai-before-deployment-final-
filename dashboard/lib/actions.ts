@@ -17,59 +17,44 @@ import {
 } from "@/lib/supabase/leads-actions";
 import { getCallLogsFromSupabase } from "@/lib/supabase/call-log-actions";
 
-// Serverless-safe path helpers — writes go to /tmp in production (read-only FS)
-import { getReadPath, getWritePath } from "./paths";
-
-// Convenience wrappers (keeps the rest of the file readable)
-const LOGS_FILE        = () => getReadPath("call_logs.json");
-const LEADS_FILE       = () => getReadPath("leads.csv");
-const ANALYSIS_CACHE   = () => getReadPath("analysis_cache.json");
-const LEADS_META_FILE  = () => getReadPath("leads_meta.json");
+// Define paths relative to the root project (one level up from dashboard)
+const DATA_DIR = path.join(process.cwd(), "..", "data");
+const LOGS_FILE = path.join(DATA_DIR, "call_logs.json");
+const LEADS_FILE = path.join(DATA_DIR, "leads.csv");
+const ANALYSIS_CACHE_FILE = path.join(DATA_DIR, "analysis_cache.json");
+const LEADS_META_FILE = path.join(DATA_DIR, "leads_meta.json");
 
 import crypto from "crypto";
 
 export async function getCallLogs() {
   try {
-    // 0. Read env variables (process.env is always available; local .env fallback only in dev)
+    // 0. Load env variables manually since dashboard runs in a subdirectory
+    const envPath = path.join(process.cwd(), "..", ".env");
     let authId = process.env.VOBIZ_AUTH_ID;
     let authToken = process.env.VOBIZ_AUTH_TOKEN;
     
-    // In local dev, also try reading from the parent .env file if env vars aren't set
-    if (!authId || !authToken) {
-      try {
-        const envPath = path.join(process.cwd(), "..", ".env");
-        if (fs.existsSync(envPath)) {
-          const envContent = fs.readFileSync(envPath, "utf-8");
-          envContent.split("\n").forEach(line => {
-            const [key, ...values] = line.split("=");
-            if (key === "VOBIZ_AUTH_ID") authId = values.join("=").trim().replace(/\r/g, "");
-            if (key === "VOBIZ_AUTH_TOKEN") authToken = values.join("=").trim().replace(/\r/g, "");
-          });
-        }
-      } catch { /* skip in production where parent dir doesn't exist */ }
+    if (fs.existsSync(envPath) && (!authId || !authToken)) {
+      const envContent = fs.readFileSync(envPath, "utf-8");
+      envContent.split("\n").forEach(line => {
+        const [key, ...values] = line.split("=");
+        if (key === "VOBIZ_AUTH_ID") authId = values.join("=").trim().replace(/\r/g, "");
+        if (key === "VOBIZ_AUTH_TOKEN") authToken = values.join("=").trim().replace(/\r/g, "");
+      });
     }
 
     // 1. Fetch local logs (for AI Sentiment, Summary, Transcript)
     let localLogs: any[] = await getCallLogsFromSupabase();
     
-    // Fallback to local JSON if Supabase has no records (only works in local dev)
-    if (!localLogs || localLogs.length === 0) {
-      try {
-        const logsPath = LOGS_FILE();
-        if (fs.existsSync(logsPath)) {
-          localLogs = JSON.parse(fs.readFileSync(logsPath, "utf-8"));
-        }
-      } catch { /* skip in production */ }
+    // Fallback to local JSON if Supabase has no records (e.g. fresh clone or un-migrated DB)
+    if ((!localLogs || localLogs.length === 0) && fs.existsSync(LOGS_FILE)) {
+      localLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
     }
 
-    // Load Groq Analysis Cache (local dev only)
+    // Load Groq Analysis Cache
     let analysisCache: Record<string, any> = {};
-    try {
-      const cachePath = ANALYSIS_CACHE();
-      if (fs.existsSync(cachePath)) {
-        analysisCache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-      }
-    } catch { /* skip in production */ }
+    if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
+      analysisCache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
+    }
     
     // 2. Fetch Vobiz CDRs, Transcripts, and Recordings
     let vobizCdrs: any[] = [];
@@ -228,83 +213,6 @@ export async function getCallLogs() {
   }
 }
 
-// ── Get Call Logs for a Specific Lead ────────────────────────────────────────
-export async function getCallLogsForLead(phone: string): Promise<any[]> {
-  try {
-    // Normalize phone: remove + and spaces for matching
-    const cleanPhone = phone.replace(/[+\s]/g, "");
-
-    // Try Supabase first
-    const { businessId } = await import("./supabase/leads-actions").then(m => m.getEffectiveBusinessId());
-    if (businessId) {
-      const { createClient } = await import("./supabase/server");
-      const supabase = await createClient();
-
-      // Query call_logs where from_number or to_number matches the phone
-      const { data: logs, error } = await supabase
-        .from("call_logs")
-        .select("*")
-        .eq("business_id", businessId)
-        .or(`from_number.ilike.%${cleanPhone}%,to_number.ilike.%${cleanPhone}%`)
-        .order("created_at", { ascending: false });
-
-      if (!error && logs && logs.length > 0) {
-        return logs.map((row) => {
-          let transcriptText = "";
-          if (Array.isArray(row.transcript)) {
-            transcriptText = row.transcript.map((m: any) => m.text).join("\n");
-          } else if (typeof row.transcript === "string") {
-            transcriptText = row.transcript;
-          }
-
-          return {
-            id: row.id,
-            timestamp: row.created_at,
-            phone_number: row.from_number || row.to_number || "",
-            direction: row.direction,
-            status: row.status,
-            duration: row.duration,
-            transcript: transcriptText,
-            summary: row.summary,
-            sentiment: row.sentiment,
-            caller_intent: row.caller_intent,
-            lead_id: row.lead_id,
-          };
-        });
-      }
-    }
-
-    // Fallback to local JSON
-    const logsPath2 = LOGS_FILE();
-    if (fs.existsSync(logsPath2)) {
-      const localLogs = JSON.parse(fs.readFileSync(logsPath2, "utf-8"));
-      return localLogs
-        .filter((log: any) => {
-          const logPhone = (log.phone_number || "").replace(/[+\s]/g, "");
-          return logPhone.includes(cleanPhone) || cleanPhone.includes(logPhone);
-        })
-        .map((log: any) => ({
-          id: `local-${log.timestamp}`,
-          timestamp: log.timestamp,
-          phone_number: log.phone_number,
-          direction: log.direction,
-          status: "Completed",
-          duration: 0,
-          transcript: log.transcript || "",
-          summary: log.summary || "",
-          sentiment: log.sentiment || "",
-          caller_intent: log.caller_intent || "",
-          lead_id: null,
-        }));
-    }
-
-    return [];
-  } catch (error) {
-    console.error("Error reading call logs for lead:", error);
-    return [];
-  }
-}
-
 // ── Lead Types ─────────────────────────────────────────────────────────────
 
 export type LeadStatus = "New" | "Contacted" | "Qualified" | "Proposal" | "Negotiation" | "Won" | "Lost";
@@ -352,23 +260,22 @@ interface LeadMeta {
 
 function readLeadsMeta(): Record<string, LeadMeta> {
   try {
-    const f = LEADS_META_FILE();
-    if (!fs.existsSync(f)) return {};
-    return JSON.parse(fs.readFileSync(f, "utf-8"));
+    if (!fs.existsSync(LEADS_META_FILE)) return {};
+    return JSON.parse(fs.readFileSync(LEADS_META_FILE, "utf-8"));
   } catch {
     return {};
   }
 }
 
 function writeLeadsMeta(meta: Record<string, LeadMeta>) {
-  fs.writeFileSync(getWritePath("leads_meta.json"), JSON.stringify(meta, null, 2), "utf-8");
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(LEADS_META_FILE, JSON.stringify(meta, null, 2), "utf-8");
 }
 
 function parseLeadsCsv(): { timestamp: string; name: string; phone: string; city: string }[] {
   try {
-    const f = LEADS_FILE();
-    if (!fs.existsSync(f)) return [];
-    const data = fs.readFileSync(f, "utf-8");
+    if (!fs.existsSync(LEADS_FILE)) return [];
+    const data = fs.readFileSync(LEADS_FILE, "utf-8");
     const lines = data.split("\n").filter(line => line.trim() !== "");
     if (lines.length <= 1) return [];
     return lines.slice(1).map(line => {
@@ -400,17 +307,15 @@ export async function getLeads(): Promise<EnrichedLead[]> {
     // Cross-reference call logs for sentiment, intent, call count
     let callLogs: any[] = [];
     try {
-      const logsPath3 = LOGS_FILE();
-      if (fs.existsSync(logsPath3)) {
-        callLogs = JSON.parse(fs.readFileSync(logsPath3, "utf-8"));
+      if (fs.existsSync(LOGS_FILE)) {
+        callLogs = JSON.parse(fs.readFileSync(LOGS_FILE, "utf-8"));
       }
     } catch { /* ignore */ }
 
     let analysisCache: Record<string, any> = {};
     try {
-      const cachePath2 = ANALYSIS_CACHE();
-      if (fs.existsSync(cachePath2)) {
-        analysisCache = JSON.parse(fs.readFileSync(cachePath2, "utf-8"));
+      if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
+        analysisCache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
       }
     } catch { /* ignore */ }
 
@@ -451,7 +356,7 @@ export async function getLeads(): Promise<EnrichedLead[]> {
         status: m.status || "New",
         priority: m.priority || "Medium",
         source: m.source || "AI Agent (Inbound)",
-        businessType: (m as any).businessType || "",
+        businessType: "Inbound",
         tags: m.tags || [],
         notes: m.notes || [],
         assignedTo: m.assignedTo || "",
@@ -656,15 +561,18 @@ export async function getOverviewStats() {
   const prevApi = prev30DaysLogs.length - prevSip;
 
   const currActive = new Set(current30DaysLogs.filter((l: any) => l.direction === "inbound" && l.phone_number).map((l: any) => l.phone_number)).size || 1;
-  const prevActive = new Set(prev30DaysLogs.filter((l: any) => l.direction === "inbound" && l.phone_number).map((l: any) => l.phone_number)).size || 1;
+  const currDuration = current30DaysLogs.reduce((acc: number, l: any) => acc + (l.duration || 0), 0);
+  const prevDuration = prev30DaysLogs.reduce((acc: number, l: any) => acc + (l.duration || 0), 0);
+  const currAvg = current30DaysLogs.length > 0 ? Math.round(currDuration / current30DaysLogs.length) : 0;
+  const prevAvg = prev30DaysLogs.length > 0 ? Math.round(prevDuration / prev30DaysLogs.length) : 0;
 
   const changes = {
     totalCalls: getChange(current30DaysLogs.length, prev30DaysLogs.length),
     totalCost: getChange(currCost, prevCost),
     pickupRate: pickupChange,
     sipTrunkCalls: getChange(currSip, prevSip),
-    voiceApiCalls: getChange(currApi, prevApi),
-    activeNumbers: getChange(currActive, prevActive),
+    totalMinutes: getChange(Math.round(currDuration / 60), Math.round(prevDuration / 60)),
+    avgDuration: getChange(currAvg, prevAvg),
   };
 
   return {
@@ -672,11 +580,10 @@ export async function getOverviewStats() {
     totalLeads,
     positiveCalls,
     avgDuration,
+    totalMinutes: Math.round(totalDuration / 60),
     totalCost: totalCostVal,
     pickupRate,
     sipTrunkCalls,
-    voiceApiCalls,
-    activeNumbers,
     changes,
     usageChartData,
     costChartData,
@@ -702,26 +609,27 @@ export async function getCallDetails(id: string) {
       log.summary = analysis.short_summary;
       log.caller_intent = analysis.lead_info?.intent;
       
+      const ANALYSIS_CACHE_FILE = path.join(DATA_DIR, "analysis_cache.json");
       let cache: Record<string, any> = {};
-      const cacheRead = ANALYSIS_CACHE();
-      if (fs.existsSync(cacheRead)) {
-        cache = JSON.parse(fs.readFileSync(cacheRead, "utf-8"));
+      if (fs.existsSync(ANALYSIS_CACHE_FILE)) {
+        cache = JSON.parse(fs.readFileSync(ANALYSIS_CACHE_FILE, "utf-8"));
       }
       cache[id] = analysis;
-      fs.writeFileSync(getWritePath("analysis_cache.json"), JSON.stringify(cache, null, 2));
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(ANALYSIS_CACHE_FILE, JSON.stringify(cache, null, 2));
 
       // If it's an inbound call and has lead info, add to CRM
       if (log.direction === "inbound" && analysis.lead_info?.name) {
+        const LEADS_FILE = path.join(DATA_DIR, "leads.csv");
         const newLeadLine = `"${log.timestamp}","${analysis.lead_info.name}","${log.phone_number}","${analysis.lead_info.city || 'Unknown'}"\n`;
-        const leadsRead = LEADS_FILE();
-        if (fs.existsSync(leadsRead)) {
+        if (fs.existsSync(LEADS_FILE)) {
           // Check if already exists to prevent duplicate
-          const content = fs.readFileSync(leadsRead, "utf-8");
+          const content = fs.readFileSync(LEADS_FILE, "utf-8");
           if (!content.includes(log.phone_number)) {
-            fs.appendFileSync(getWritePath("leads.csv"), newLeadLine);
+            fs.appendFileSync(LEADS_FILE, newLeadLine);
           }
         } else {
-          fs.writeFileSync(getWritePath("leads.csv"), `Timestamp,Name,Phone,City\n${newLeadLine}`);
+          fs.writeFileSync(LEADS_FILE, `Timestamp,Name,Phone,City\n${newLeadLine}`);
         }
       }
     }
@@ -1131,20 +1039,20 @@ export async function addNewLead(data: {
 }): Promise<boolean> {
   try {
     // Write to CSV
-    const leadsRead = LEADS_FILE();
-    if (!fs.existsSync(leadsRead)) {
-      fs.writeFileSync(getWritePath("leads.csv"), "Timestamp,Name,Phone,City\n");
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(LEADS_FILE)) {
+      fs.writeFileSync(LEADS_FILE, "Timestamp,Name,Phone,City\n");
     }
 
     // Check for duplicate phone
-    const existing = fs.existsSync(leadsRead) ? fs.readFileSync(leadsRead, "utf-8") : "";
+    const existing = fs.readFileSync(LEADS_FILE, "utf-8");
     if (existing.includes(data.phone)) {
       return false; // Duplicate
     }
 
     const timestamp = new Date().toISOString();
     fs.appendFileSync(
-      getWritePath("leads.csv"),
+      LEADS_FILE,
       `"${timestamp}","${data.name}","${data.phone}","${data.city || ""}"\n`
     );
 
@@ -1189,14 +1097,13 @@ export async function addNewLead(data: {
 export async function deleteLead(phone: string): Promise<boolean> {
   try {
     // Remove from CSV
-    const leadsRead = LEADS_FILE();
-    if (fs.existsSync(leadsRead)) {
-      const data = fs.readFileSync(leadsRead, "utf-8");
+    if (fs.existsSync(LEADS_FILE)) {
+      const data = fs.readFileSync(LEADS_FILE, "utf-8");
       const lines = data.split("\n");
       const filtered = lines.filter(
         (line) => !line.includes(phone)
       );
-      fs.writeFileSync(getWritePath("leads.csv"), filtered.join("\n"));
+      fs.writeFileSync(LEADS_FILE, filtered.join("\n"));
     }
 
     // Remove from meta
@@ -1255,14 +1162,13 @@ export async function bulkUpdateLeads(
 export async function bulkDeleteLeads(phones: string[]): Promise<boolean> {
   try {
     // Remove from CSV
-    const leadsReadB = LEADS_FILE();
-    if (fs.existsSync(leadsReadB)) {
-      const data = fs.readFileSync(leadsReadB, "utf-8");
+    if (fs.existsSync(LEADS_FILE)) {
+      const data = fs.readFileSync(LEADS_FILE, "utf-8");
       const lines = data.split("\n");
       const filtered = lines.filter(
         (line) => !phones.some((p) => line.includes(p))
       );
-      fs.writeFileSync(getWritePath("leads.csv"), filtered.join("\n"));
+      fs.writeFileSync(LEADS_FILE, filtered.join("\n"));
     }
 
     // Remove from meta
@@ -1306,101 +1212,4 @@ export async function exportLeadsCsv(): Promise<string> {
       .join(",")
   );
   return [headers, ...rows].join("\n");
-}
-
-export async function syncVobizRecordingAction(logId: string, phone: string, timestamp: string): Promise<{ success: boolean; message: string }> {
-  try {
-    const envPath = path.join(process.cwd(), "..", ".env");
-    let authId = process.env.VOBIZ_AUTH_ID;
-    let authToken = process.env.VOBIZ_AUTH_TOKEN;
-    
-    if (fs.existsSync(envPath) && (!authId || !authToken)) {
-      const envContent = fs.readFileSync(envPath, "utf-8");
-      envContent.split("\n").forEach(line => {
-        const [key, ...values] = line.split("=");
-        if (key === "VOBIZ_AUTH_ID") authId = values.join("=").trim().replace(/\r/g, "");
-        if (key === "VOBIZ_AUTH_TOKEN") authToken = values.join("=").trim().replace(/\r/g, "");
-      });
-    }
-
-    if (!authId || !authToken) return { success: false, message: "Missing Vobiz credentials" };
-
-    const headers = { "X-Auth-ID": authId, "X-Auth-Token": authToken, "Accept": "application/json" };
-    
-    // Fetch recent CDRs (we can reuse fetchAllVobizCdrs or fetch directly)
-    const cdrs = await fetchAllVobizCdrs(authId, headers);
-    if (!cdrs || cdrs.length === 0) return { success: false, message: "No CDRs found in Vobiz" };
-
-    const normalizedPhone = phone?.replace("+", "");
-    const targetTime = new Date(timestamp).getTime();
-    
-    let bestMatch: any = null;
-    let minTimeDiff = Infinity;
-
-    // We allow up to 48 hours diff for test environments or timezone issues
-    const maxDiff = 1000 * 60 * 60 * 48; 
-
-    for (const cdr of cdrs) {
-      const dest = cdr.destination_number?.replace("+", "");
-      const caller = cdr.caller_id_number?.replace("+", "");
-      
-      if (normalizedPhone && (dest === normalizedPhone || caller === normalizedPhone)) {
-        const cdrTime = new Date(cdr.start_time).getTime();
-        const diff = Math.abs(cdrTime - targetTime);
-        if (diff < minTimeDiff && diff < maxDiff) {
-          minTimeDiff = diff;
-          bestMatch = cdr;
-        }
-      }
-    }
-
-    if (!bestMatch) {
-      return { success: false, message: "Could not find a matching call in Vobiz for this number." };
-    }
-
-    const sipCallId = bestMatch.sip_call_id || bestMatch.uuid;
-    if (!sipCallId) {
-      return { success: false, message: "Matched call in Vobiz lacks a SIP Call ID." };
-    }
-
-    // Since we matched it, let's update Supabase audio_url
-    // We will save a special Vobiz proxied URL so CustomAudioPlayer handles it.
-    // Or just save `sip_call_id` in a column. But since we created `updateCallLogAudioUrlInSupabase`,
-    // We can just construct the proxied URL we normally use.
-    const newAudioUrl = `/api/recordings/${sipCallId}.wav`;
-    
-    const { updateCallLogAudioUrlInSupabase } = await import("@/lib/supabase/call-log-actions");
-    const updated = await updateCallLogAudioUrlInSupabase(logId, newAudioUrl);
-    
-    if (updated) {
-      revalidatePath(`/logs/${logId}`);
-      revalidatePath(`/logs`);
-      return { success: true, message: "Audio recording synced successfully!" };
-    } else {
-      // If it failed to update Supabase, maybe update local JSON
-      const logsRead = LOGS_FILE();
-      if (fs.existsSync(logsRead)) {
-        let callLogs = JSON.parse(fs.readFileSync(logsRead, "utf-8"));
-        let localUpdated = false;
-        callLogs = callLogs.map((log: any) => {
-          if (log.id === logId) {
-            localUpdated = true;
-            return { ...log, recording_path: newAudioUrl, sip_call_id: sipCallId };
-          }
-          return log;
-        });
-        if (localUpdated) {
-          fs.writeFileSync(getWritePath("call_logs.json"), JSON.stringify(callLogs, null, 2));
-          revalidatePath(`/logs/${logId}`);
-          revalidatePath(`/logs`);
-          return { success: true, message: "Audio synced (local JSON updated)." };
-        }
-      }
-    }
-
-    return { success: false, message: "Found match but failed to save to database." };
-  } catch (error: any) {
-    console.error("Error in syncVobizRecordingAction:", error);
-    return { success: false, message: error.message || "Failed to sync recording" };
-  }
 }

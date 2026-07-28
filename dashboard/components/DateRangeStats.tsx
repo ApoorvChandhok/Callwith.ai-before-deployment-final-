@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Phone, CheckCircle, Hash, Calendar, ChevronDown } from "lucide-react";
+import { Phone, CheckCircle, Hash, Calendar, ChevronDown, Clock, Timer } from "lucide-react";
 
 interface DateRangeStatsProps {
   logs: any[];
@@ -96,12 +96,13 @@ export default function DateRangeStats({ logs = [] }: DateRangeStatsProps) {
     const costStr = typeof raw === 'string' ? raw.replace(/[^0-9.-]/g, '') : '0';
     return acc + (parseFloat(costStr) || 0);
   }, 0);
+  const totalDuration = filteredLogs.reduce((acc: number, l: any) => acc + (l.duration || 0), 0);
+  const totalMinutes = Math.round(totalDuration / 60);
+  const avgDuration = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0;
   const sipTrunkCalls = filteredLogs.filter((l: any) => l.direction === "outbound" || l.call_direction === "outbound").length;
-  const voiceApiCalls = filteredLogs.filter((l: any) => l.direction === "inbound" || l.call_direction === "inbound").length;
   const pickupRate = totalCalls > 0
     ? Math.round((filteredLogs.filter((l: any) => l.duration > 0 || l.billsec > 0).length / totalCalls) * 100)
     : 0;
-  const activeNumbers = new Set(filteredLogs.filter((l: any) => l.caller_id_number || l.from_number).map((l: any) => l.caller_id_number || l.from_number)).size || 1;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
@@ -112,8 +113,8 @@ export default function DateRangeStats({ logs = [] }: DateRangeStatsProps) {
     { label: "Total Spend", value: formatCurrency(totalCost), color: "text-blue-500", icon: null },
     { label: "Call Pickup Rate", value: `${pickupRate}%`, color: "text-emerald-500", icon: CheckCircle },
     { label: "SIP Trunk Calls", value: sipTrunkCalls, color: "text-blue-500", icon: Phone },
-    { label: "Voice API Calls", value: voiceApiCalls, color: "text-orange-500", icon: Phone },
-    { label: "Active Numbers", value: activeNumbers, color: "text-violet-500", icon: Hash },
+    { label: "Minutes Consumed", value: totalMinutes, color: "text-orange-500", icon: Clock },
+    { label: "Avg Call Duration", value: `${avgDuration}s`, color: "text-violet-500", icon: Timer },
   ];
 
   return (

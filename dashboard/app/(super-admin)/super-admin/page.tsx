@@ -133,14 +133,15 @@ export default function SuperAdminPage() {
   useEffect(() => { fetchWorkspaces() }, [])
 
   // ── Derived stats ──────────────────────────────────────────────────────────
-  const totalSpend  = workspaces.reduce((s, w) => s + w.total_spend_usd, 0)
-  const totalCalls  = workspaces.reduce((s, w) => s + w.total_calls, 0)
-  const totalMins   = workspaces.reduce((s, w) => s + w.total_minutes, 0)
-  const activeCount = workspaces.filter(w => w.is_active).length
-  const maxSpend    = Math.max(...workspaces.map(w => w.total_spend_usd), 0.001)
+  const validWorkspaces = workspaces.filter(w => w.id !== '00000000-0000-0000-0000-000000000000') // hide archive tenant
 
-  const filtered = workspaces
-    .filter(w => w.id !== '00000000-0000-0000-0000-000000000000') // hide archive tenant
+  const totalSpend  = validWorkspaces.reduce((s, w) => s + w.total_spend_usd, 0)
+  const totalCalls  = validWorkspaces.reduce((s, w) => s + w.total_calls, 0)
+  const totalMins   = validWorkspaces.reduce((s, w) => s + w.total_minutes, 0)
+  const activeCount = validWorkspaces.filter(w => w.is_active).length
+  const maxSpend    = Math.max(...validWorkspaces.map(w => w.total_spend_usd), 0.001)
+
+  const filtered = validWorkspaces
     .filter(w =>
       w.name.toLowerCase().includes(search.toLowerCase()) ||
       w.slug?.toLowerCase().includes(search.toLowerCase()) ||
@@ -174,7 +175,7 @@ export default function SuperAdminPage() {
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">Workspaces</h2>
               <p className="text-sm text-white/40 mt-0.5">
-                {workspaces.length} tenant{workspaces.length !== 1 ? 's' : ''} · 7-day billing window
+                {validWorkspaces.length} tenant{validWorkspaces.length !== 1 ? 's' : ''} · 7-day billing window
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -204,7 +205,7 @@ export default function SuperAdminPage() {
 
       {/* Platform-wide stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Workspaces" value={workspaces.length} sub={`${activeCount} active`} />
+        <StatCard label="Total Workspaces" value={validWorkspaces.length} sub={`${activeCount} active`} />
         <StatCard label="7-Day Spend" value={`$${totalSpend.toFixed(4)}`} sub="all tenants" color="text-violet-300" />
         <StatCard label="7-Day Calls" value={totalCalls.toLocaleString()} sub="all directions" color="text-sky-300" />
         <StatCard label="7-Day Minutes" value={totalMins.toFixed(1)} sub="talk time" color="text-emerald-300" />

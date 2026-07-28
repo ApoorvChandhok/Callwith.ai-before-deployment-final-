@@ -785,6 +785,7 @@ class InboundAssistant(Agent):
             "3. TTS SAFETY: Never write symbols, dates, numbers, or currencies as digits. "
             "Spell them out. Never use asterisks, hashtags, or markdown formatting.\n"
             "4. SPEED: Respond as fast as possible. Short answers beat long explanations.\n"
+            "5. NO CODE OUT LOUD: NEVER speak out code, python scripts, tool calls, JSON, or thought processes. All tools must be called silently. NEVER say things like 'print()' or 'tool_code'.\n"
         )
 
         # ── Dynamic RAG search instruction (when KB has embeddings) ──
@@ -805,7 +806,8 @@ class InboundAssistant(Agent):
             "If the user speaks Hindi or any language other than English, you MUST call the `change_spoken_language` tool "
             "with the correct language code (e.g. 'hi-IN') BEFORE you reply in that language! "
             "If you generate Hindi text without calling the tool first, the audio engine will crash and the call will drop. "
-            "IMPORTANT TO REDUCE DELAYS: ONLY call this tool if you actually need to switch languages. If you are already speaking Hindi, DO NOT call the tool again, just reply immediately!"
+            "IMPORTANT TO REDUCE DELAYS: ONLY call this tool if you actually need to switch languages. If you are already speaking Hindi, DO NOT call the tool again, just reply immediately!\n"
+            "CRITICAL: NEVER speak out the tool name, Python code, or function calls in your text response. Tool calls must be made silently via the backend function call mechanism. Do not output text like `tool_code` or `print(...)`."
         )
         if tts_language and "en" not in tts_language.lower():
             instructions += f"\n\nCRITICAL: Your current target language is '{tts_language}'. You MUST speak entirely in this language code. Do NOT speak English."

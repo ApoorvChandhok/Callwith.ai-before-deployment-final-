@@ -726,8 +726,11 @@ Best Regards,
       prompt += `\n\n## KNOWLEDGE BASE\nUse the following documents to answer client questions. Only reference what is explicitly mentioned in these documents.\n\n${ragContent}`;
     }
 
+    const capitalizedName = ttsVoice.charAt(0).toUpperCase() + ttsVoice.slice(1);
+    prompt = prompt.replace(/You are (Priya|Neha|Rahul|Rohan|Aditya|Ishita|Shreya),/, `You are ${capitalizedName},`);
+
     return prompt;
-  }, [brochures, customPrompt, buildRagContent]);
+  }, [brochures, customPrompt, buildRagContent, ttsVoice]);
 
   const startCampaign = async () => {
     if (validLeads.length === 0 || brochures.length === 0) return;

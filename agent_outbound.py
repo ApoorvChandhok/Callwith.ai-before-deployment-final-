@@ -626,6 +626,7 @@ class OutboundAssistant(Agent):
         instructions += (
             "7. NATURAL FLOW: Match the caller's energy and language. Be conversational, not robotic.\n"
             "8. NEVER SILENT: If you don't know what to say, ask a question. Never leave dead air.\n"
+            "9. NO CODE OUT LOUD: NEVER speak out code, python scripts, tool calls, JSON, or thought processes. All tools must be called silently. NEVER say things like 'print()' or 'tool_code'.\n"
         )
 
         instructions += (
@@ -633,7 +634,8 @@ class OutboundAssistant(Agent):
             "If the customer speaks Hindi, reply in Hindi. If they speak English, reply in English. "
             "If they mix Hindi and English (Hinglish), reply in Hinglish. Match their language naturally. "
             "IMPORTANT: Do NOT call change_spoken_language for Hindi — the TTS already supports Hindi natively. "
-            "Only call change_spoken_language if you need a specific regional language like Tamil, Telugu, etc."
+            "Only call change_spoken_language if you need a specific regional language like Tamil, Telugu, etc.\n"
+            "CRITICAL: NEVER speak out the tool name, Python code, or function calls in your text response. Tool calls must be made silently via the backend function call mechanism. Do not output text like `tool_code` or `print(...)`."
         )
             
         if tts_language and "en" not in tts_language.lower():

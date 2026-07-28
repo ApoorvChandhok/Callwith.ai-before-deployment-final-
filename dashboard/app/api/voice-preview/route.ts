@@ -33,19 +33,34 @@ function loadRootEnv(): Record<string, string> {
 }
 
 // Short, natural-sounding sample text per language
-const SAMPLE_TEXTS: Record<string, string> = {
-  "hi-IN": "नमस्ते! मैं आपकी AI वॉइस असिस्टेंट हूं। आज मैं आपकी कैसे मदद कर सकती हूं?",
+const SAMPLE_TEXTS_FEMALE: Record<string, string> = {
+  "hi-IN": "नमस्ते! मैं कॉल विथ एआई से बात कर रही हूँ। बताइए, आज मैं आपकी क्या मदद कर सकती हूँ?",
   "ta-IN": "வணக்கம்! நான் உங்கள் AI குரல் உதவியாளர். இன்று நான் உங்களுக்கு எப்படி உதவலாம்?",
   "te-IN": "హలో! నేను మీ AI వాయిస్ అసిస్టెంట్ ని. ఈరోజు నేను మీకు ఎలా సహాయపడగలను?",
   "kn-IN": "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ AI ವಾಯ್ಸ್ ಅಸಿಸ್ಟೆಂಟ್. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?",
   "ml-IN": "ഹലോ! ഞാൻ നിങ്ങളുടെ AI വോയ്സ് അസിസ്റ്റന്റ് ആണ്. ഇന്ന് ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?",
-  "mr-IN": "नमस्ते! मी तुमची AI व्हॉइस असिस्टंट आहे. आज मी तुम्हाला कशी मदत करू शकतो?",
+  "mr-IN": "नमस्ते! मी तुमची AI व्हॉइस असिस्टंट आहे. आज मी तुम्हाला कशी मदत करू शकते?",
   "gu-IN": "નમસ્તે! હું તમારી AI વૉઇસ આસિસ્ટન્ટ છું. આજે હું તમને કેવી રીતે મદદ કરી શકું?",
   "bn-IN": "হ্যালো! আমি আপনার AI ভয়েস অ্যাসিস্ট্যান্ট। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?",
   "pa-IN": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਤੁਹਾਡੀ AI ਵੌਇਸ ਅਸਿਸਟੈਂਟ ਹਾਂ। ਅੱਜ ਮੈਂ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦੀ ਹਾਂ?",
-  "en-IN": "Hi there! I'm your AI voice assistant. How can I help you today?",
-  "en-US": "Hi there! I'm your AI voice assistant. How can I help you today?",
-  default: "Hi there! I'm your AI voice assistant. How can I help you today?",
+  "en-IN": "Hi there! Main Call with AI se baat kar rahi hoon. How can I help you today?",
+  "en-US": "Hi there! Main Call with AI se baat kar rahi hoon. How can I help you today?",
+  default: "Hi there! Main Call with AI se baat kar rahi hoon. How can I help you today?",
+};
+
+const SAMPLE_TEXTS_MALE: Record<string, string> = {
+  "hi-IN": "नमस्ते! मैं कॉल विथ एआई से बात कर रहा हूँ। बताइए, आज मैं आपकी क्या मदद कर सकता हूँ?",
+  "ta-IN": "வணக்கம்! நான் உங்கள் AI குரல் உதவியாளர். இன்று நான் உங்களுக்கு எப்படி உதவலாம்?",
+  "te-IN": "హలో! నేను మీ AI వాయిస్ అసిస్టెంట్ ని. ఈరోజు నేను మీకు ఎలా సహాయపడగలను?",
+  "kn-IN": "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ AI ವಾಯ್ಸ್ ಅಸಿಸ್ಟೆಂಟ್. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?",
+  "ml-IN": "ഹലോ! ഞാൻ നിങ്ങളുടെ AI വോയ്സ് അസിസ്റ്റന്റ് ആണ്. ഇന്ന് ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?",
+  "mr-IN": "नमस्ते! मी तुमचा AI व्हॉइस असिस्टंट आहे. आज मी तुम्हाला कशी मदत करू शकतो?",
+  "gu-IN": "નમસ્તે! હું તમારો AI વૉઇસ આસિસ્ટન્ટ છું. આજે હું તમને કેવી રીતે મદદ કરી શકું?",
+  "bn-IN": "হ্যালো! আমি আপনার AI ভয়েস অ্যাসিস্ট্যান্ট। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?",
+  "pa-IN": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਤੁਹਾਡਾ AI ਵੌਇਸ ਅਸਿਸਟੈਂਟ ਹਾਂ। ਅੱਜ ਮੈਂ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦਾ ਹਾਂ?",
+  "en-IN": "Hi there! Main Call with AI se baat kar raha hoon. How can I help you today?",
+  "en-US": "Hi there! Main Call with AI se baat kar raha hoon. How can I help you today?",
+  default: "Hi there! Main Call with AI se baat kar raha hoon. How can I help you today?",
 };
 
 export async function GET(req: NextRequest) {
@@ -55,7 +70,14 @@ export async function GET(req: NextRequest) {
   const model    = searchParams.get("model") || "";
   const language = searchParams.get("language") || "en-IN";
 
-  const sampleText = SAMPLE_TEXTS[language] ?? SAMPLE_TEXTS.default;
+  const MALE_SARVAM_VOICES = new Set([
+    "aditya", "ashutosh", "rahul", "rohan", "amit", "dev", "ratan", "varun", "manan", "sumit", "kabir", "aayan", "shubh", "advait", "anand", "tarun", "sunny", "mani", "gokul", "vijay", "mohit", "rehan", "soham"
+  ]);
+
+  const isMale = provider === "sarvam" ? MALE_SARVAM_VOICES.has(voice.toLowerCase()) : false;
+  const sampleText = isMale 
+    ? (SAMPLE_TEXTS_MALE[language] ?? SAMPLE_TEXTS_MALE.default)
+    : (SAMPLE_TEXTS_FEMALE[language] ?? SAMPLE_TEXTS_FEMALE.default);
   const env = loadRootEnv();
 
   // ── Valid Sarvam bulbul:v3 speakers (server-side guard) ─────────────────────
@@ -127,7 +149,7 @@ export async function GET(req: NextRequest) {
           Authorization: `Token ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text: SAMPLE_TEXTS.default }),
+        body: JSON.stringify({ text: sampleText }),
         signal: AbortSignal.timeout(12_000),
       });
 
@@ -155,7 +177,7 @@ export async function GET(req: NextRequest) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          transcript: SAMPLE_TEXTS.default,
+          transcript: sampleText,
           model_id: model || "sonic-2",
           voice: { mode: "id", id: voice },
           output_format: { container: "mp3", encoding: "mp3", sample_rate: 44100 },
@@ -188,7 +210,7 @@ export async function GET(req: NextRequest) {
         },
         body: JSON.stringify({
           model: model || "tts-1",
-          input: SAMPLE_TEXTS.default,
+          input: sampleText,
           voice: voice || "alloy",
         }),
         signal: AbortSignal.timeout(15_000),
