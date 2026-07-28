@@ -6,6 +6,7 @@ import { Clock, Calendar } from "lucide-react";
 
 interface DashboardChartsProps {
   stats: any;
+  logs?: any[];
 }
 
 type ChartType = "usage" | "cost" | "inboundOutbound";
