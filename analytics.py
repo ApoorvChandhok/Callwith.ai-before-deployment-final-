@@ -4,7 +4,7 @@ import logging
 import datetime
 import urllib.request
 import urllib.error
-from groq import Groq
+import google.generativeai as genai
 
 logger = logging.getLogger("analytics")
 
@@ -377,8 +377,14 @@ async def analyze_and_save_call(
         if not full_transcript.strip():
             analysis = {"summary": "No conversation recorded.", "sentiment": "Neutral", "caller_intent": "Unknown"}
         else:
-            # Use llama-3.1-8b-instant: higher rate limits (20K TPM) vs 70b model (12K TPM)
-            client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+            # Use Gemini 2.5 Flash for fast, accurate sentiment analysis
+            genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+            gemini_model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
 
             if is_real_estate:
                 prompt = (
@@ -415,13 +421,9 @@ async def analyze_and_save_call(
                     "- \"user_info\": A JSON object containing extracted details about the user (e.g., 'name', 'phone', 'purpose', 'appointment_details', 'city', 'email', etc.). Include all relevant info discussed in the call. If not mentioned, leave null.\n\n"
                     f"Transcript:\n{full_transcript}"
                 )
-            
-            response = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="llama-3.1-8b-instant",
-                response_format={"type": "json_object"}
-            )
-            analysis = json.loads(response.choices[0].message.content)
+
+            response = gemini_model.generate_content(prompt)
+            analysis = json.loads(response.text)
         
         # Append to call_logs.json
         logs = []

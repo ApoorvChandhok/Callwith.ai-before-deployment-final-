@@ -3,6 +3,20 @@
 ---
 ## Changelog
 
+### 2026-07-28 - Persistent localStorage Cache for Call Log Enrichment
+
+* **[MODIFY] `dashboard/app/(dashboard)/logs/page.tsx`** — Replaced session-only `sessionEnrichedIds` Set with a full `localStorage`-based enrichment cache (`calllog_enrichment_cache`). Three helper functions added: `readEnrichmentCache()` (reads & TTL-prunes cache), `writeEnrichmentCache()` (merges new entries with timestamp), `applyEnrichmentCache()` (hydrates log arrays from cache). Flow: (1) When logs are fetched from the API, `applyEnrichmentCache()` is called before rendering so sentiment/summary appear instantly for previously-analyzed calls. (2) `enrichNewLogs` checks the cache first — logs with cached enrichment skip the AI call entirely. (3) After a successful AI enrichment, results are written to localStorage via `writeEnrichmentCache()`. Cache uses a 7-day TTL; stale entries are pruned on every read. Storage quota errors are silently caught so they never break the page.
+
+---
+
+### 2026-07-28 - Sentiment Analysis LLM Switched from Groq → Gemini 2.5 Flash
+
+* **[MODIFY] `analytics.py`** — Replaced `from groq import Groq` with `import google.generativeai as genai`. The `save_call_log()` function now uses `gemini-2.5-flash` via the Google Generative AI SDK (`genai.GenerativeModel`) with `response_mime_type="application/json"` for structured output. All three prompt branches (real estate, car dealership, generic) are preserved unchanged. `GROQ_API_KEY` is no longer required for sentiment analysis (it is still used by the voice agent LLM plugin).
+* **[MODIFY] `requirements.txt`** — Added `google-generativeai>=0.8.0`.
+* **[MODIFY] `.env.example`** — Added `GOOGLE_API_KEY=your_google_api_key` under a new "Google Gemini (Sentiment Analysis)" section. Groq section renamed to clarify it is for the Voice Agent only.
+
+---
+
 ### 2026-07-23 - Sentiment Analysis Loading Fix for All Call Logs (Pagination + Infinite Scroll)
 
 * **[FIX] `dashboard/app/(dashboard)/logs/page.tsx`** — Completely reworked enrichment logic. Previously, enrichment only ran once on mount via a `useEffect([])` and only covered the first 50 logs. Now: (1) A `enrichNewLogs` `useCallback` is defined before `fetchLogs` and called after every page/batch loads (`setTimeout(..., 1500)`). (2) Uses a module-level `sessionEnrichedIds` Set to track which IDs have already been enriched this session — prevents duplicate AI calls on re-renders or pagination changes. (3) Updates local log state directly from the enrichment API response without a full re-fetch — keeps infinite scroll state intact.

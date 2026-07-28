@@ -4,8 +4,74 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import CallLogsTable from "@/components/CallLogsTable";
 import { RefreshCw, Search, Filter, Calendar, Loader2, Upload, DatabaseZap } from "lucide-react";
 
-// Session-level cache: track IDs that were already enriched this session
-// so we don't re-hit the AI when re-rendering or navigating back
+// ── Persistent enrichment cache (localStorage) ───────────────────────────────
+// Stores sentiment/summary/caller_intent per call ID with a 7-day TTL.
+// This prevents re-running AI analysis on page reload or navigation.
+const CACHE_KEY = "calllog_enrichment_cache";
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+type EnrichmentEntry = {
+  sentiment?: string;
+  summary?: string;
+  caller_intent?: string;
+  cachedAt: number;
+};
+
+function readEnrichmentCache(): Record<string, EnrichmentEntry> {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return {};
+    const parsed: Record<string, EnrichmentEntry> = JSON.parse(raw);
+    // Evict stale entries on read
+    const now = Date.now();
+    let pruned = false;
+    for (const id of Object.keys(parsed)) {
+      if (now - parsed[id].cachedAt > CACHE_TTL_MS) {
+        delete parsed[id];
+        pruned = true;
+      }
+    }
+    if (pruned) {
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(parsed)); } catch { /* quota exceeded — ignore */ }
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeEnrichmentCache(updates: Record<string, Omit<EnrichmentEntry, "cachedAt">>) {
+  try {
+    const existing = readEnrichmentCache();
+    const now = Date.now();
+    for (const [id, data] of Object.entries(updates)) {
+      existing[id] = { ...data, cachedAt: now };
+    }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(existing));
+  } catch { /* quota exceeded — silently skip */ }
+}
+
+function applyEnrichmentCache(logs: any[]): any[] {
+  try {
+    const cache = readEnrichmentCache();
+    if (Object.keys(cache).length === 0) return logs;
+    return logs.map((log) => {
+      const entry = cache[log.id];
+      if (!entry) return log;
+      return {
+        ...log,
+        sentiment: entry.sentiment ?? log.sentiment,
+        summary: entry.summary ?? log.summary,
+        caller_intent: entry.caller_intent ?? log.caller_intent,
+      };
+    });
+  } catch {
+    return logs;
+  }
+}
+
+// Session-level Set: tracks IDs processed this session to prevent
+// duplicate in-flight enrichment calls within the same page session
 const sessionEnrichedIds = new Set<string>();
 
 export const dynamic = "force-dynamic";
@@ -68,17 +134,47 @@ export default function LogsPage() {
   }, [debouncedSearch, startDate, endDate, sentiment, direction]);
 
   // ── Per-batch enrichment: runs after every page of logs loads ───────────────
-  // Checks newly loaded logs for missing sentiment/summary. If found, calls
-  // the enrich API targeting only those specific IDs. On success, updates
-  // local state directly from the response (no full re-fetch needed).
-  // Uses a session-level Set to avoid re-enriching IDs that were already
-  // processed in this browser session.
+  // 1. Checks the localStorage cache first — any log already enriched in a
+  //    prior session is immediately applied from cache (no AI call needed).
+  // 2. For remaining logs with missing fields, calls the enrich API.
+  // 3. On success, persists results to localStorage so future visits skip AI.
+  // 4. Uses a session-level Set as a fast in-memory guard against duplicate
+  //    in-flight calls within the same session.
   const enrichNewLogs = useCallback(async (newLogs: any[]) => {
-    // Find logs in this batch that are missing sentiment and haven't been
-    // enriched yet this session
+    // ── Step 1: Apply localStorage cache to logs that have cached enrichment ──
+    const cache = readEnrichmentCache();
+    const cachedUpdates: Record<string, Partial<{ sentiment: string; summary: string; caller_intent: string }>> = {};
+
+    newLogs.forEach((log) => {
+      const entry = cache[log.id];
+      if (!entry) return;
+      // Only apply cache if the DB row is still missing fields
+      const updates: any = {};
+      if (entry.sentiment && (!log.sentiment || log.sentiment === "Neutral")) updates.sentiment = entry.sentiment;
+      if (entry.summary && (!log.summary || log.summary.length < 10)) updates.summary = entry.summary;
+      if (entry.caller_intent && !log.caller_intent) updates.caller_intent = entry.caller_intent;
+      if (Object.keys(updates).length > 0) cachedUpdates[log.id] = updates;
+    });
+
+    if (Object.keys(cachedUpdates).length > 0) {
+      console.log(`[Cache] Hydrated ${Object.keys(cachedUpdates).length} logs from localStorage cache`);
+      setLogs((prev) =>
+        prev.map((log) => {
+          const cached = cachedUpdates[log.id];
+          return cached ? { ...log, ...cached } : log;
+        })
+      );
+    }
+
+    // ── Step 2: Find logs still missing fields (not in cache, not in session) ──
     const missingIds = newLogs
       .filter((log) => {
         if (sessionEnrichedIds.has(log.id)) return false; // already enriched this session
+        if (cache[log.id]) {
+          // Mark session Set so we don't retry cached IDs within same session
+          sessionEnrichedIds.add(log.id);
+          return false;
+        }
         const hasSentiment = log.sentiment && log.sentiment !== "Neutral";
         const hasSummary = log.summary && log.summary.length >= 10;
         const hasIntent = !!log.caller_intent;
@@ -92,6 +188,7 @@ export default function LogsPage() {
     // Mark as "in-flight" immediately to prevent duplicate enrichment calls
     missingIds.forEach((id) => sessionEnrichedIds.add(id));
 
+    // ── Step 3: Call the enrich API for logs that need AI analysis ────────────
     try {
       const res = await fetch(
         `/api/call-logs/enrich?ids=${missingIds.join(",")}`,
@@ -101,7 +198,11 @@ export default function LogsPage() {
 
       const result = await res.json();
       if (result.enriched > 0 && result.enrichedResults) {
-        console.log(`[Enrich] Enriched ${result.enriched} calls on current page`);
+        console.log(`[Enrich] Enriched ${result.enriched} calls — persisting to localStorage cache`);
+
+        // ── Step 4: Persist enrichment results to localStorage cache ─────────
+        writeEnrichmentCache(result.enrichedResults);
+
         // Update just the affected log entries in state — no full re-fetch
         setLogs((prev) =>
           prev.map((log) => {
@@ -120,7 +221,7 @@ export default function LogsPage() {
       }
     } catch {
       // Silent fail — enrichment is best-effort
-      // Remove from session cache so they can be retried later
+      // Remove from session Set so they can be retried later
       missingIds.forEach((id) => sessionEnrichedIds.delete(id));
     }
   }, []);
@@ -182,11 +283,16 @@ export default function LogsPage() {
           );
         }
 
+        // ── Apply localStorage cache before rendering ─────────────────────────
+        // Hydrate logs with any previously cached enrichment data so the UI
+        // shows correct sentiment/summary immediately, without waiting for AI.
+        const hydrated = applyEnrichmentCache(fetched);
+
         // Append for infinite scroll or replace for page 1 / refresh
         if (!resetToPage1 && fetchPage > 1) {
-          setLogs((prev) => [...prev, ...fetched]);
+          setLogs((prev) => [...prev, ...hydrated]);
         } else {
-          setLogs(fetched);
+          setLogs(hydrated);
         }
 
         setTotal(data.total ?? 0);
@@ -195,7 +301,8 @@ export default function LogsPage() {
 
         // Trigger enrichment for this batch after a short delay
         // (allows the UI to render first, then enrichment runs in background)
-        setTimeout(() => enrichNewLogs(fetched), 1500);
+        // Pass the hydrated logs so enrichNewLogs can see which fields are still missing
+        setTimeout(() => enrichNewLogs(hydrated), 1500);
       } catch (e: any) {
         setError(e.message ?? "Failed to load call logs");
       } finally {
